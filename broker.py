@@ -252,7 +252,7 @@ class Broker(BaseBroker):
 
     def execute(self, signal):
         """
-
+        执行单个指令
         :param signal: 指令，即signal df中的信息
         :return:
         """
@@ -275,7 +275,14 @@ class Broker(BaseBroker):
             else:
                 raise NotImplementedError("side not implemented")
 
-    def batch_execute(self, signals, date, stk_names):
+    def batch_execute(self, signals:pd.DataFrame, date, stk_names:List[str]):
+        """
+        批量执行指令，无法画出净值曲线
+        :param signals:
+        :param date:
+        :param stk_names:
+        :return:
+        """
         revenue_dict = defaultdict(dict)  # dict of dict
         ret_dict = defaultdict(dict)  # dict of dict
         aligned_signals_dict = defaultdict(dict)  # dict of dict
@@ -336,201 +343,205 @@ class Broker(BaseBroker):
 
         return revenue_dict, ret_dict, aligned_signals_dict
 
-    def update_netvalue(self, date):
-        # netvalue=self._cash+self.cash_from_short
-        netvalue = self._cash
-        prices = self.data.loc[date]
-        for k, v in self.positions.items():
-            pair_codes = k
-            qty = v
-            # print(prices[pair_codes],qty)
-            price = prices[pair_codes]
-            netvalue += price * qty
-        print(f'netvalue {date} {netvalue}')
-        self.net_value = pd.concat(
-            [self.net_value,
-             pd.DataFrame(data={'timestamp': date, 'netvalue': netvalue}, index=[0]).set_index('timestamp')])
 
-    def calc_net_value(self, data, last_net_value, control_drawdown=False, drawdown_threshold=-0.1, level='portfolio',
-                       weight=None):
-        """
-        每个调仓周期内单独计算净值以及止损
-        param: ret, changeRatio
-        param: last_net_value, 上一期末组合净值
-        """
+    ############## 旧代码 deprecated ################
+    # def update_netvalue(self, date):
+    #     # netvalue=self._cash+self.cash_from_short
+    #     netvalue = self._cash
+    #     prices = self.data.loc[date]
+    #     for k, v in self.positions.items():
+    #         pair_codes = k
+    #         qty = v
+    #         # print(prices[pair_codes],qty)
+    #         price = prices[pair_codes]
+    #         netvalue += price * qty
+    #     print(f'netvalue {date} {netvalue}')
+    #     self.net_value = pd.concat(
+    #         [self.net_value,
+    #          pd.DataFrame(data={'timestamp': date, 'netvalue': netvalue}, index=[0]).set_index('timestamp')])
+    #
+    # def calc_net_value(self, data, last_net_value, control_drawdown=False, drawdown_threshold=-0.1, level='portfolio',
+    #                    weight=None):
+    #     """
+    #     每个调仓周期内单独计算净值以及止损
+    #     param: ret, changeRatio
+    #     param: last_net_value, 上一期末组合净值
+    #     """
+    #
+    #     def weighted_net_value(data, weight):
+    #         if data.isna().any().any() or weight.isna().any():
+    #             print("warning !!!! calc_net_value weighted_net_value ret,weight has nan")
+    #         if weight is not None:
+    #             net_value = data.apply(lambda x: np.matmul(x, np.array(weight).T), axis=1)
+    #         else:
+    #             net_value = data.mean(axis=1)
+    #
+    #         return net_value
+    #
+    #     stoploss = None  # 记录下跌幅度
+    #
+    #     if len(data.columns) == 0:
+    #         # 用nan填补没有持仓的日子，之后ffill
+    #         print('calc_net_value: no holding codes')
+    #         index = pd.to_datetime(pd.date_range(start=last_trade_date, end=trade_date, freq='D').date)
+    #         return pd.DataFrame(data=[last_net_value] * len(index), index=index), stoploss
+    #
+    #     data = data.fillna(0) / 100 + 1
+    #     data.iloc[0] = data.iloc[0] * last_net_value
+    #     temp = data.cumprod()
+    #
+    #     if control_drawdown:
+    #         if level == 'stock':
+    #             test = deepcopy(temp)
+    #             premaximum = test.cummax()
+    #             stoploss = ((test - premaximum) / premaximum).cummin()
+    #             if_stoploss = stoploss < drawdown_threshold
+    #             for col in if_stoploss.columns:
+    #                 test.loc[if_stoploss.loc[:, col], col] = np.nan
+    #             test = test.ffill()
+    #             net_value = weighted_net_value(test, weight)
+    #
+    #         if level == 'portfolio':
+    #             net_value = weighted_net_value(temp, weight)
+    #             test = deepcopy(net_value)
+    #             premaximum = test.cummax()
+    #             stoploss = ((test - premaximum) / premaximum).cummin()
+    #             if_stoploss = stoploss < drawdown_threshold
+    #             test.loc[if_stoploss] = np.nan
+    #             net_value = test.ffill()
+    #     else:
+    #         net_value = weighted_net_value(temp, weight)
+    #
+    #     net_value.index = pd.to_datetime(net_value.index).date.tolist()
+    #
+    #     return net_value, stoploss
+    #
+    # def get_sign(self, type):
+    #     if type == 'long':
+    #         return 1
+    #     elif type == 'short':
+    #         return -1
+    #
+    # def open_position(self, timestamp, symbol, qty, type):
+    #     sign = self.get_sign(type)
+    #     price = self.data.loc[timestamp][symbol]
+    #     if self._cash - sign * qty * price < 0:
+    #         print('no more _cash')
+    #         return 'fail'
+    #
+    #     self._cash -= sign * qty * price
+    #     self.positions[symbol] += sign * qty
+    #     if self.positions[symbol] == 0:
+    #         del self.positions[symbol]
+    #     new = {'timestamp': timestamp, 'type': type, 'pair_codes': symbol, 'qty': qty, 'price': price,
+    #            'status': 'sucess'}
+    #     self.transactions.append(new)
+    #     print(f"open {new}")
+    #     return 'sucess'
+    #
+    # def close_position(self, timestamp, symbol, qty, type):
+    #     if symbol not in self.positions.keys():
+    #         print('No position to close', symbol)
+    #         return 'fail'
+    #
+    #     sign = self.get_sign(type)
+    #     price = self.data.loc[timestamp][symbol]
+    #     if type == 'long':
+    #         if self.positions[symbol] < qty:
+    #             print('Not enough shares to close long')
+    #             return 'fail'
+    #
+    #     elif type == 'short':
+    #         if abs(self.positions[symbol]) < qty:
+    #             print('Not enough shares to close short')
+    #             return 'fail'
+    #
+    #     self._cash += sign * qty * price
+    #     self.positions[symbol] -= sign * qty
+    #     if self.positions[symbol] == 0:
+    #         del self.positions[symbol]
+    #     new = {'timestamp': timestamp, 'type': type, 'pair_codes': symbol, 'qty': qty, 'price': price,
+    #            'status': 'sucess'}
+    #     self.transactions.append(new)
+    #     print(f"close {new}")
+    #     return 'sucess'
+    #
+    # def run(self):
+    #     """
+    #     todo 手续费，中间价，时间拉长，看论文
+    #
+    #     :return:
+    #     """
+    #     # for ret in self.ret:
+    #     #     signals = self.strategies.generate_signals(ret)
+    #     #     orders = self.broker.execute_signals(signals)
+    #     #     self.observer.record(orders, self.ret, self.broker)
+    #     # self.statistics.report(self.observer)
+    #
+    #     for date in self.data.index:
+    #         triggers = self.signals.loc[date]
+    #         prices = self.data.loc[date]
+    #
+    #         # close pended
+    #         for symbol in self.order_pending:
+    #             if symbol in self.positions.keys():
+    #                 q = self.positions[symbol]
+    #                 res = self.close_position(date, symbol, q, 'long')
+    #                 if res == 'fail':
+    #                     self.order_pending.append(symbol)
+    #                 else:
+    #                     self.order_pending.remove(symbol)
+    #
+    #         # close long
+    #         close_long_list = triggers.loc[triggers['close_long'] == 1, 'pair_codes']
+    #         if len(close_long_list) > 0:
+    #             # cash_buy1stk=self._cash*self.usage_limit_pct/len(close_short_list)
+    #             # qty=cash_buy1stk/prices.loc[close_short_list]
+    #             # print(qty)
+    #             for symbol in close_long_list:
+    #                 if symbol in self.positions.keys():
+    #                     q = self.positions[symbol]
+    #                     res = self.close_position(date, symbol, q, 'long')
+    #                     if res == 'fail':
+    #                         self.order_pending.append(symbol)
+    #
+    #         # open short
+    #         open_short_list = triggers.loc[triggers['open_short'] == 1, 'pair_codes']
+    #         if len(open_short_list) > 0:
+    #             cash_buy1stk = self._cash * self.usage_limit_pct / len(open_short_list)
+    #             qty = abs(cash_buy1stk / prices.loc[open_short_list])
+    #             # print(qty)
+    #             for symbol in open_short_list:
+    #                 q = qty[symbol]
+    #                 q = min(self.max_qty, q)
+    #                 self.open_position(date, symbol, q, 'short')
+    #
+    #         # open long
+    #         open_long_list = triggers.loc[triggers['open_long'] == 1, 'pair_codes']
+    #         if len(open_long_list) > 0:
+    #             cash_buy1stk = self._cash * self.usage_limit_pct / len(open_long_list)
+    #             qty = abs(cash_buy1stk / prices.loc[open_long_list])
+    #             # print(qty)
+    #             for symbol in open_long_list:
+    #                 q = qty[symbol]
+    #                 q = min(self.max_qty, q)
+    #                 self.open_position(date, symbol, q, 'long')
+    #
+    #         # close short
+    #         close_short_list = triggers.loc[triggers['close_short'] == 1, 'pair_codes']
+    #         if len(close_short_list) > 0:
+    #             # cash_buy1stk=self._cash*self.usage_limit_pct/len(close_short_list)
+    #             # qty=cash_buy1stk/prices.loc[close_short_list]
+    #             # print(qty)
+    #             for symbol in close_short_list:
+    #                 if symbol in self.positions.keys():
+    #                     q = self.positions[symbol]
+    #                     self.close_position(date, symbol, q, 'short')
+    #
+    #         # update info
+    #         self.update_netvalue(date)
+    #
+    #         if self.verbose:
+    #             print(self._cash, self.transactions, self.positions, self.net_value)
 
-        def weighted_net_value(data, weight):
-            if data.isna().any().any() or weight.isna().any():
-                print("warning !!!! calc_net_value weighted_net_value ret,weight has nan")
-            if weight is not None:
-                net_value = data.apply(lambda x: np.matmul(x, np.array(weight).T), axis=1)
-            else:
-                net_value = data.mean(axis=1)
-
-            return net_value
-
-        stoploss = None  # 记录下跌幅度
-
-        if len(data.columns) == 0:
-            # 用nan填补没有持仓的日子，之后ffill
-            print('calc_net_value: no holding codes')
-            index = pd.to_datetime(pd.date_range(start=last_trade_date, end=trade_date, freq='D').date)
-            return pd.DataFrame(data=[last_net_value] * len(index), index=index), stoploss
-
-        data = data.fillna(0) / 100 + 1
-        data.iloc[0] = data.iloc[0] * last_net_value
-        temp = data.cumprod()
-
-        if control_drawdown:
-            if level == 'stock':
-                test = deepcopy(temp)
-                premaximum = test.cummax()
-                stoploss = ((test - premaximum) / premaximum).cummin()
-                if_stoploss = stoploss < drawdown_threshold
-                for col in if_stoploss.columns:
-                    test.loc[if_stoploss.loc[:, col], col] = np.nan
-                test = test.ffill()
-                net_value = weighted_net_value(test, weight)
-
-            if level == 'portfolio':
-                net_value = weighted_net_value(temp, weight)
-                test = deepcopy(net_value)
-                premaximum = test.cummax()
-                stoploss = ((test - premaximum) / premaximum).cummin()
-                if_stoploss = stoploss < drawdown_threshold
-                test.loc[if_stoploss] = np.nan
-                net_value = test.ffill()
-        else:
-            net_value = weighted_net_value(temp, weight)
-
-        net_value.index = pd.to_datetime(net_value.index).date.tolist()
-
-        return net_value, stoploss
-
-    def get_sign(self, type):
-        if type == 'long':
-            return 1
-        elif type == 'short':
-            return -1
-
-    def open_position(self, timestamp, symbol, qty, type):
-        sign = self.get_sign(type)
-        price = self.data.loc[timestamp][symbol]
-        if self._cash - sign * qty * price < 0:
-            print('no more _cash')
-            return 'fail'
-
-        self._cash -= sign * qty * price
-        self.positions[symbol] += sign * qty
-        if self.positions[symbol] == 0:
-            del self.positions[symbol]
-        new = {'timestamp': timestamp, 'type': type, 'pair_codes': symbol, 'qty': qty, 'price': price,
-               'status': 'sucess'}
-        self.transactions.append(new)
-        print(f"open {new}")
-        return 'sucess'
-
-    def close_position(self, timestamp, symbol, qty, type):
-        if symbol not in self.positions.keys():
-            print('No position to close', symbol)
-            return 'fail'
-
-        sign = self.get_sign(type)
-        price = self.data.loc[timestamp][symbol]
-        if type == 'long':
-            if self.positions[symbol] < qty:
-                print('Not enough shares to close long')
-                return 'fail'
-
-        elif type == 'short':
-            if abs(self.positions[symbol]) < qty:
-                print('Not enough shares to close short')
-                return 'fail'
-
-        self._cash += sign * qty * price
-        self.positions[symbol] -= sign * qty
-        if self.positions[symbol] == 0:
-            del self.positions[symbol]
-        new = {'timestamp': timestamp, 'type': type, 'pair_codes': symbol, 'qty': qty, 'price': price,
-               'status': 'sucess'}
-        self.transactions.append(new)
-        print(f"close {new}")
-        return 'sucess'
-
-    def run(self):
-        """
-        todo 手续费，中间价，时间拉长，看论文
-
-        :return:
-        """
-        # for ret in self.ret:
-        #     signals = self.strategies.generate_signals(ret)
-        #     orders = self.broker.execute_signals(signals)
-        #     self.observer.record(orders, self.ret, self.broker)
-        # self.statistics.report(self.observer)
-
-        for date in self.data.index:
-            triggers = self.signals.loc[date]
-            prices = self.data.loc[date]
-
-            # close pended
-            for symbol in self.order_pending:
-                if symbol in self.positions.keys():
-                    q = self.positions[symbol]
-                    res = self.close_position(date, symbol, q, 'long')
-                    if res == 'fail':
-                        self.order_pending.append(symbol)
-                    else:
-                        self.order_pending.remove(symbol)
-
-            # close long
-            close_long_list = triggers.loc[triggers['close_long'] == 1, 'pair_codes']
-            if len(close_long_list) > 0:
-                # cash_buy1stk=self._cash*self.usage_limit_pct/len(close_short_list)
-                # qty=cash_buy1stk/prices.loc[close_short_list]
-                # print(qty)
-                for symbol in close_long_list:
-                    if symbol in self.positions.keys():
-                        q = self.positions[symbol]
-                        res = self.close_position(date, symbol, q, 'long')
-                        if res == 'fail':
-                            self.order_pending.append(symbol)
-
-            # open short
-            open_short_list = triggers.loc[triggers['open_short'] == 1, 'pair_codes']
-            if len(open_short_list) > 0:
-                cash_buy1stk = self._cash * self.usage_limit_pct / len(open_short_list)
-                qty = abs(cash_buy1stk / prices.loc[open_short_list])
-                # print(qty)
-                for symbol in open_short_list:
-                    q = qty[symbol]
-                    q = min(self.max_qty, q)
-                    self.open_position(date, symbol, q, 'short')
-
-            # open long
-            open_long_list = triggers.loc[triggers['open_long'] == 1, 'pair_codes']
-            if len(open_long_list) > 0:
-                cash_buy1stk = self._cash * self.usage_limit_pct / len(open_long_list)
-                qty = abs(cash_buy1stk / prices.loc[open_long_list])
-                # print(qty)
-                for symbol in open_long_list:
-                    q = qty[symbol]
-                    q = min(self.max_qty, q)
-                    self.open_position(date, symbol, q, 'long')
-
-            # close short
-            close_short_list = triggers.loc[triggers['close_short'] == 1, 'pair_codes']
-            if len(close_short_list) > 0:
-                # cash_buy1stk=self._cash*self.usage_limit_pct/len(close_short_list)
-                # qty=cash_buy1stk/prices.loc[close_short_list]
-                # print(qty)
-                for symbol in close_short_list:
-                    if symbol in self.positions.keys():
-                        q = self.positions[symbol]
-                        self.close_position(date, symbol, q, 'short')
-
-            # update info
-            self.update_netvalue(date)
-
-            if self.verbose:
-                print(self._cash, self.transactions, self.positions, self.net_value)
+    ############## 旧代码 deprecated ################
