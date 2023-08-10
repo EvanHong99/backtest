@@ -38,6 +38,7 @@ code_dict = {
     '兴业银行': '601166.XSHG',
     '东方财富': '300059.XSHE',
 }
+stk_name_dict={v:k for k,v in code_dict.items()}
 
 
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
@@ -61,6 +62,7 @@ FILE_FMT_my_trade_details="{}_{}_my_trade_details.csv"
 FILE_FMT_vol_tov="{}_{}_vol_tov.csv"
 FILE_FMT_model="{}_period{}_automl.pkl"
 FILE_FMT_scaler= "{}_scaler_{}_{}.pkl"
+FILE_FMT_events="{}_{}_events.csv"
 
 
 
@@ -91,6 +93,7 @@ freq='200ms'
 pred_n_steps = 200 # 预测40s，即200个steps
 use_n_steps = 50 # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
 drop_current = False # 是否将当前股价作为因子输入给模型
+use_level=5
 # num = param['num']
 # target = param['target']  # ret,current
 # pred_n_steps = param['pred_n_steps']

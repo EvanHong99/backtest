@@ -238,13 +238,24 @@ class LobTimePreprocessor(BasePreprocessor):
         # self.freq = '200ms'
 
     @staticmethod
-    def del_untrade_time(df, cut_tail=True):
+    def del_untrade_time(df, date1=date1, cut_tail=True):
         """
 
         :param df:
         :param cut_tail: 去掉尾盘3min竞价
         :return:
         """
+
+        important_times = {
+            'open_call_auction_start': pd.to_datetime(f'{date1} 09:15:00.000000'),
+            'open_call_auction_end': pd.to_datetime(f'{date1} 09:25:00.000000'),
+            'continues_auction_am_start': pd.to_datetime(f'{date1} 09:30:00.000000'),
+            'continues_auction_am_end': pd.to_datetime(f'{date1} 11:30:00.000000'),
+            'continues_auction_pm_start': pd.to_datetime(f'{date1} 13:00:00.000000'),
+            'continues_auction_pm_end': pd.to_datetime(f'{date1} 14:57:00.000000'),
+            'close_call_auction_start': pd.to_datetime(f'{date1} 14:57:00.000000'),
+            'close_call_auction_end': pd.to_datetime(f'{date1} 15:00:00.000000'), }
+
         end_time = important_times['close_call_auction_end'] if not cut_tail else important_times[
             'continues_auction_pm_end']
         a = df.loc[important_times['continues_auction_am_start']:important_times['continues_auction_am_end']]
@@ -292,7 +303,7 @@ class LobTimePreprocessor(BasePreprocessor):
 
 class LobFeatureEngineering(object):
     """
-    todo: 买入意愿因子《高频因子的现实与幻想》，需要利用9:30开盘后半小时内的数据构建该因子
+
     """
 
     def __init__(self):
@@ -301,6 +312,13 @@ class LobFeatureEngineering(object):
         self.av = {k: str(LobColTemplate('a', k, 'v')) for k in range(1, 11)}
         self.bv = {k: str(LobColTemplate('b', k, 'v')) for k in range(1, 11)}
         self.curr = 'current'
+
+    def calc_buy_intense(self):
+        """
+        todo: 买入意愿因子《高频因子的现实与幻想》，需要利用9:30开盘后半小时内的数据构建该因子
+        :return:
+        """
+        pass
 
     def calc_wap(self, df, level, cross=True):
         """Function to calculate first WAP"""
@@ -336,23 +354,35 @@ class LobFeatureEngineering(object):
         pb_a = (df[self.ap[1]] - df[self.curr]).rename('price_breadth_a')
         return pb_b, pb_a
 
-    def calc_depth_imbalance(self, df):
+    def calc_length_imbalance(self, df, level):
         """
+        quantity imbalance
 
         :return:
 
-        .. [#] Cao, C., Hansch, O., & Wang, X. (2009). The information content of an open limit‐order book. Journal of Futures Markets: Futures, Options, and Other Derivative Products, 29(1), 16-41.
+        .. [#] Cao, C., Hansch, O., & Wang, X. (2009). The information content of an open limit‐order book. Journal of Futures Markets: Futures, Options, and Other Derivative Products, 29(1), 16-41. 第30页
         """
-        pass
+        QR_level = (df[self.av[level]] - df[self.bv[level]]) / (df[self.av[level]] + df[self.bv[level]])
+        QR_level=pd.Series(QR_level,index=df.index,name=f"li_{level}")
+        return QR_level
 
-    def calc_height_imbalance(self, df):
+    def calc_height_imbalance(self, df, level):
         """
+        和原文有出入，按照原文公式可能会出现inf，因为分母为0.根据文章所表达含义我进行了bid price计算部分的修改
 
         :return:
 
-        .. [#] Cao, C., Hansch, O., & Wang, X. (2009). The information content of an open limit‐order book. Journal of Futures Markets: Futures, Options, and Other Derivative Products, 29(1), 16-41.
+        .. [#] Cao, C., Hansch, O., & Wang, X. (2009). The information content of an open limit‐order book. Journal of Futures Markets: Futures, Options, and Other Derivative Products, 29(1), 16-41. 第30页
         """
-        pass
+        assert level >= 2
+        # 原文
+        # nominator = (df[self.ap[level]] - df[self.ap[level - 1]]) - (df[self.bp[level]] - df[self.bp[level - 1]])
+        # denominator = (df[self.ap[level]] - df[self.ap[level - 1]]) + (df[self.bp[level]] - df[self.bp[level - 1]])
+        # 修改
+        nominator = (df[self.ap[level]] - df[self.ap[level - 1]]) - (df[self.bp[level - 1]] - df[self.bp[level]])
+        denominator = (df[self.ap[level]] - df[self.ap[level - 1]]) + (df[self.bp[level - 1]] - df[self.bp[level]])
+        HR_level = pd.Series(nominator / denominator,index=df.index,name=f"hi_{level}")
+        return HR_level
 
     def calc_spread_tick(self, df, num_levels=5):
         """
@@ -386,8 +416,11 @@ class LobFeatureEngineering(object):
         spread_tick = spread_tick.rename('spread_tick')
         return spread_tick
 
-    def calc_realized_volatility(self, series):
-        return np.sqrt(np.sum(series ** 2))
+    def calc_realized_volatility(self, series):  # testit
+        cum_vol = np.cumsum((series+1) ** 2)
+        denominator = np.arange(1, len(series) + 1, 1)
+        realized_vol=(cum_vol / denominator-1).rename('realized_vol')
+        return realized_vol
 
     def calc_volume_order_imbalance(self, df: pd.DataFrame):
         """
@@ -449,18 +482,16 @@ class LobFeatureEngineering(object):
                         name='buy_sell_pressure')
         return res
 
-    def calc_gaps(self, df, events: pd.Series, level=5):
+    def calc_gaps(self, df, level=5):
         """
 
-        :param events: a Series of integers indicating the type of events
         :param df:
         :return:
 
         .. [#] Price jump prediction in Limit Order Book. Ban Zheng, Eric Moulines, Fr ́ed ́eric Abergel https://arxiv.org/pdf/1204.1381.pdf
         """
-        assert len(df) == len(events)
 
-        def meta_G_price(df, i, side: str):
+        def _meta_price_gap(df, i, side: str):
             """price gap"""
             res = None
             if side == 'b':
@@ -469,45 +500,46 @@ class LobFeatureEngineering(object):
                 res = df[self.ap[i + 1]] - df[self.ap[i]]
             return res.rename(f"{side}{i + 1}{i}_p_gap")
 
-        res = pd.DataFrame()
-        for i in range(level - 1, 0):
-            gap = meta_G_price(df, i, 'a')
-            res = pd.concat([res, gap], axis=1)
-
+        # res = pd.DataFrame()
+        l = []
+        for i in range(level - 1, 0, -1):
+            gap = _meta_price_gap(df, i, 'a')
+            l.append(gap)
         for i in range(1, level):
-            gap = meta_G_price(df, i, 'b')
-            res = pd.concat([res, gap], axis=1)
+            gap = _meta_price_gap(df, i, 'b')
+            l.append(gap)
+        res = pd.concat(l, axis=1)
         return res
 
-    def calc_event_dummies(self, events: pd.Series, level=5):
-        """
-        .. [#] Price jump prediction in Limit Order Book. Ban Zheng, Eric Moulines, Fr ́ed ́eric Abergel https://arxiv.org/pdf/1204.1381.pdf
-
-        :param events: a Series of integers indicating the type of events
-        :param df:
-        :return:
-
-        """
-        vs = ["BLO", "ALO", "BMO", "AMO", "BTT", "ATT"]
-        mapper = {k: vs[k - 1] for k in range(1, level + 2)}
-        event_df = pd.get_dummies(events.apply(lambda x: mapper[x]))
-        return event_df
+    # def calc_event_dummies(self, trade_details,order_details):
+    #     """
+    #     .. [#] Price jump prediction in Limit Order Book. Ban Zheng, Eric Moulines, Fr ́ed ́eric Abergel https://arxiv.org/pdf/1204.1381.pdf
+    #
+    #     :param events: a Series of integers indicating the type of events
+    #     :param df:
+    #     :return: one-hot dummies
+    #
+    #     """
+    #     vs = ["BLO", "ALO", "BMO", "AMO", "BTT", "ATT"]
+    #     mapper = {k+1: vs[k] for k in range(6)}
+    #     event_df = pd.get_dummies(events.apply(lambda x: mapper[x]))
+    #     return event_df
 
     def calc_bid_ask_volume_ratio(self, df: pd.DataFrame, level=5):
         df1 = deepcopy(df)
-        df1[[self.av[i] for i in range(1, level + 1)] + [self.bv[i] for i in range(1, level + 1)]] = np.exp(
-            df1[[self.av[i] for i in range(1, level + 1)] + [self.bv[i] for i in range(1, level + 1)]])
+        cols=[self.av[i] for i in range(1, level + 1)] + [self.bv[i] for i in range(1, level + 1)]
+        # df1.loc[:,cols] = np.exp(df1[cols])
         cum_b = 0
         cum_a = 0
 
         res = pd.DataFrame()
         for i in range(1, level + 1):
-            cum_b += df1[self.bv[1]]
-            cum_a += df1[self.av[1]]
+            cum_b += df1[self.bv[i]]
+            cum_a += df1[self.av[i]]
             W_i = pd.Series(np.log(cum_b / cum_a), name=f'bid_ask_volume_ratio{i}')
             res = pd.concat([res, W_i], axis=1)
 
-        return W_i
+        return res
 
     def calc_window_avg_order_amount(self):
         """
@@ -558,36 +590,49 @@ class LobFeatureEngineering(object):
         """
         pass
 
-    def generate(self, clean_obh):
+    def generate(self, clean_obh, level=5):
+
         self.mp = self.calc_mid_price(clean_obh)
-        self.waps = [self.calc_wap(clean_obh, level=i, cross=False) for i in range(1, 6)] + [
-            self.calc_wap(clean_obh, level=i, cross=True) for i in range(1, 6)]
+        # 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。todo 好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
+        # self.mp_ret = np.log(self.mp).diff().rename("mid_price_ret")
         self.spread = self.calc_spread(clean_obh)
         self.breadth_b, self.breadth_a = self.calc_price_breadth(clean_obh)
         self.rs = self.calc_relative_spread(clean_obh)
-        self.st = self.calc_spread_tick(clean_obh, num_levels=5)
+        self.st = self.calc_spread_tick(clean_obh, num_levels=level)
         self.voi = self.calc_volume_order_imbalance(clean_obh)
-        self.bsp = self.calc_buy_sell_pressure(clean_obh, level1=1, level2=5, method='MID')
+        self.bsp = self.calc_buy_sell_pressure(clean_obh, level1=1, level2=level, method='MID')
+        # self.volatility = self.calc_realized_volatility(self.mp_ret)  # 计算ret的累积volatility
+        self.gaps = self.calc_gaps(clean_obh, level=level)
+        self.bavr = self.calc_bid_ask_volume_ratio(clean_obh, level=level)
 
-        # self.volatility=self.calc_realized_volatility() # 计算ret的累积volatility
+        self.waps = [self.calc_wap(clean_obh, level=i, cross=False) for i in range(1, level + 1)] + [
+            self.calc_wap(clean_obh, level=i, cross=True) for i in range(1, level + 1)]
+        self.lis = [self.calc_length_imbalance(clean_obh, level=i) for i in range(1, level)]
+        self.his = [self.calc_height_imbalance(clean_obh, level=i) for i in range(2, level)]
 
-        # self.di=self.calc_depth_imbalance(clean_obh_dict)
-        # self.hi=self.calc_height_imbalance(clean_obh_dict)
-
-        # self.gaps=self.calc_gaps(clean_obh_dict,events=None,level=5)
-        # self.ed=self.calc_event_dummies(events=None,level=5)
-        # self.bavr=self.calc_bid_ask_volume_ratio(clean_obh_dict, level=5)
-
-        # # use this
-        # self.features = pd.concat(
-        #     self.waps + [self.mp, self.spread, self.breadth_b, self.breadth_a, self.rs, self.st, self.voi, self.bsp],
-        #     axis=1)
-
-        # delete below
         self.features = pd.concat(
-            self.waps + [ self.spread, self.breadth_b, self.breadth_a, self.rs, self.st, self.voi, self.bsp],
+            self.waps
+            + self.lis
+            + self.his
+            + [self.mp,
+               # self.mp_ret,
+               self.spread,
+               self.breadth_b,
+               self.breadth_a,
+               self.rs,
+               self.st,
+               self.voi,
+               self.bsp,
+               # self.volatility, # 会逐渐减小为0
+               self.gaps,
+               self.bavr],
             axis=1)
+
         return self.features
+
+    def agg_features(self,features:pd.DataFrame,agg_freq:str):
+        features=features.resample(agg_freq).agg([np.mean,np.std,np.median])
+        return features
 
 
 if __name__ == '__main__':

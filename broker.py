@@ -278,6 +278,7 @@ class Broker(BaseBroker):
     def batch_execute(self, signals:pd.DataFrame, date, stk_names:List[str]):
         """
         批量执行指令，无法画出净值曲线
+        todo commission
         :param signals:
         :param date:
         :param stk_names:
@@ -312,26 +313,24 @@ class Broker(BaseBroker):
                 current = temp[str(LobColTemplate().current)]
 
                 # 计算收益，如果为正则代表收益为正
-                long_time=_aligned_signals_long['timestamp_open'].values
-                short_time=_aligned_signals_short['timestamp_open'].values
-                hold_time=_aligned_signals_hold['timestamp_open'].values
+                long_open_time=_aligned_signals_long['timestamp_open'].values
+                short_open_time=_aligned_signals_short['timestamp_open'].values
+                hold_open_time=_aligned_signals_hold['timestamp_open'].values
+                long_close_time=_aligned_signals_long['timestamp_close'].values
+                short_close_time=_aligned_signals_short['timestamp_close'].values
+                hold_close_time=_aligned_signals_hold['timestamp_close'].values
+                
+                long_revenue = b1p.loc[long_close_time].values - a1p.loc[long_open_time].values
+                long_ret = b1p.loc[long_close_time].values / a1p.loc[long_open_time].values - 1
+                short_revenue = b1p.loc[short_open_time].values - a1p.loc[short_close_time].values
+                short_ret = b1p.loc[short_open_time].values / a1p.loc[short_close_time].values - 1
 
-                long_revenue = b1p.loc[_aligned_signals_long['timestamp_close']].values - a1p.loc[
-                    _aligned_signals_long['timestamp_open']].values
-                long_ret = b1p.loc[_aligned_signals_long['timestamp_close']].values / a1p.loc[
-                    _aligned_signals_long['timestamp_open']].values - 1
-                short_revenue = b1p.loc[_aligned_signals_short['timestamp_open']].values - a1p.loc[
-                    _aligned_signals_short['timestamp_close']].values
-                short_ret = b1p.loc[_aligned_signals_short['timestamp_open']].values / a1p.loc[
-                    _aligned_signals_short['timestamp_close']].values - 1
-                long_revenue=pd.Series(long_revenue,index=long_time)
-                long_ret=pd.Series(long_ret,index=long_time)
-                short_revenue=pd.Series(short_revenue,index=short_time)
-                short_ret=pd.Series(short_ret,index=short_time)
-                hold_revenue = pd.Series(np.zeros_like(_aligned_signals_hold['timestamp_open'],dtype=float),
-                                         index=hold_time)
-                hold_ret = pd.Series(np.zeros_like(_aligned_signals_hold['timestamp_open'],dtype=float),
-                                     index=hold_time)
+                long_revenue=pd.Series(long_revenue,index=long_open_time)
+                long_ret=pd.Series(long_ret,index=long_open_time)
+                short_revenue=pd.Series(short_revenue,index=short_open_time)
+                short_ret=pd.Series(short_ret,index=short_open_time)
+                hold_revenue = pd.Series(np.zeros_like(hold_open_time,dtype=float),index=hold_open_time)
+                hold_ret = pd.Series(np.zeros_like(hold_open_time,dtype=float),index=hold_open_time)
 
                 revenue = pd.concat([long_revenue, short_revenue,hold_revenue], axis=0)
                 ret = pd.concat([long_ret, short_ret,hold_ret], axis=0)
