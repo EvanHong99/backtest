@@ -30,7 +30,7 @@ class Trade(object):
                  ask_seq,
                  quantity,
                  price,
-                 timestamp=pd.to_datetime(f'{date1} 09:25:00.000000')):
+                 timestamp=pd.to_datetime(f'{config.date1} 09:25:00.000000')):
         self.seq = seq
         self.bid_seq = bid_seq
         self.ask_seq = ask_seq

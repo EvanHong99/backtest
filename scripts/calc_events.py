@@ -27,7 +27,7 @@ from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
 import os
 
 
-def calc_events(data_root, date, symbol):
+def calc_events(trade_details,order_details):
     """
     ATT和BTT相较于原文做了化简
     :param data_root:
@@ -35,8 +35,6 @@ def calc_events(data_root, date, symbol):
     :param symbol:
     :return:
     """
-    trade_details = get_trade_details(data_root=data_root, date=date, symbol=symbol)
-    order_details = get_order_details(data_root=data_root, date=date, symbol=symbol)
 
     l = len(order_details)
     BLO = np.where(np.logical_and(order_details['side'] == OrderSideInt.bid.value,
@@ -64,13 +62,16 @@ def calc_events(data_root, date, symbol):
 
     events = pd.concat([order_events, trade_events], axis=0).fillna(0).sort_index()
     events = events.set_index('timestamp').sort_index()
-    events = LobTimePreprocessor.del_untrade_time(events.sort_index(),date1=date, cut_tail=False)
-    events = events.groupby(level=0).mean()
+    events = LobTimePreprocessor.del_untrade_time(events.sort_index(), cut_tail=False)
+    events = events.groupby(level=0).sum()
     return events
 
 
 if __name__ == '__main__':
     for date in ["20220623","20220628","20220629"]:
         for stk_name in ["贵州茅台"]:
-            events = calc_events(data_root, date, code_dict[stk_name])
+            trade_details = get_trade_details(data_root=data_root, date=date, symbol=code_dict[stk_name])
+            order_details = get_order_details(data_root=data_root, date=date, symbol=code_dict[stk_name])
+
+            events = calc_events(trade_details,order_details)
             events.to_csv(detail_data_root+f"{date}_{stk_name}_events.csv")

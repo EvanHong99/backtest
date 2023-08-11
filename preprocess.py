@@ -14,6 +14,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from config import *
+import config
 from support import LobColTemplate, Target
 import pickle
 from abc import abstractmethod
@@ -187,13 +188,13 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         return temp
 
     @staticmethod
-    def _gen_clean_obh(dataloader):
+    def _gen_clean_obh(datafeed, snapshot_window):
         """
 
         :return:
         """
-        order_book_history = dataloader.order_book_history
-        current = dataloader.current
+        order_book_history = datafeed.order_book_history
+        current = datafeed.current
         assert len(order_book_history) > 0
         obh = order_book_history
         try:
@@ -203,15 +204,15 @@ class LobCleanObhPreprocessor(BasePreprocessor):
             obh.index = pd.to_datetime(obh.index)
         obh = obh.sort_index(ascending=True)
         obh.columns = obh.columns.astype(float)
-        obh_v = LobCleanObhPreprocessor.split_volume(obh)
-        obh_p = LobCleanObhPreprocessor.split_price(obh)
+        obh_v = LobCleanObhPreprocessor.split_volume(obh, window_size=snapshot_window)
+        obh_p = LobCleanObhPreprocessor.split_price(obh, window_size=snapshot_window)
 
         clean_obh = pd.concat([obh_p, obh_v, current], axis=1).ffill().bfill()
         clean_obh.index = pd.to_datetime(clean_obh.index)
         clean_obh = LobTimePreprocessor.del_untrade_time(clean_obh, cut_tail=True)
         clean_obh = LobTimePreprocessor.add_head_tail(clean_obh,
-                                                      head_timestamp=important_times['continues_auction_am_start'],
-                                                      tail_timestamp=important_times['continues_auction_pm_end'])
+                                                      head_timestamp=config.important_times['continues_auction_am_start'],
+                                                      tail_timestamp=config.important_times['continues_auction_pm_end'])
 
         return clean_obh
 
@@ -220,8 +221,8 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         clean_obh.to_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name))
 
     @staticmethod
-    def gen_and_save(dataloader, save_root, date: str, stk_name: str):
-        clean_obh = LobCleanObhPreprocessor._gen_clean_obh(dataloader)
+    def gen_and_save(datafeed, save_root, date: str, stk_name: str, snapshot_window):
+        clean_obh = LobCleanObhPreprocessor._gen_clean_obh(datafeed, snapshot_window)
         LobCleanObhPreprocessor.save_clean_obh(clean_obh, save_root, date, stk_name)
 
     def run_batch(self):
@@ -238,7 +239,7 @@ class LobTimePreprocessor(BasePreprocessor):
         # self.freq = '200ms'
 
     @staticmethod
-    def del_untrade_time(df, date1=date1, cut_tail=True):
+    def del_untrade_time(df, cut_tail=True):
         """
 
         :param df:
@@ -246,28 +247,17 @@ class LobTimePreprocessor(BasePreprocessor):
         :return:
         """
 
-        important_times = {
-            'open_call_auction_start': pd.to_datetime(f'{date1} 09:15:00.000000'),
-            'open_call_auction_end': pd.to_datetime(f'{date1} 09:25:00.000000'),
-            'continues_auction_am_start': pd.to_datetime(f'{date1} 09:30:00.000000'),
-            'continues_auction_am_end': pd.to_datetime(f'{date1} 11:30:00.000000'),
-            'continues_auction_pm_start': pd.to_datetime(f'{date1} 13:00:00.000000'),
-            'continues_auction_pm_end': pd.to_datetime(f'{date1} 14:57:00.000000'),
-            'close_call_auction_start': pd.to_datetime(f'{date1} 14:57:00.000000'),
-            'close_call_auction_end': pd.to_datetime(f'{date1} 15:00:00.000000'), }
-
-        end_time = important_times['close_call_auction_end'] if not cut_tail else important_times[
+        end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
             'continues_auction_pm_end']
-        a = df.loc[important_times['continues_auction_am_start']:important_times['continues_auction_am_end']]
-        b = df.loc[important_times['continues_auction_pm_start']:end_time]
+        a = df.loc[config.important_times['continues_auction_am_start']:config.important_times['continues_auction_am_end']]
+        b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
         temp = pd.concat([a, b], axis=0)
 
         temp = temp.sort_index()
         return temp
 
     @staticmethod
-    def add_head_tail(df, head_timestamp=pd.to_datetime(f'{date1} 09:30:00.000'),
-                      tail_timestamp=pd.to_datetime(f'{date1} 14:57:00.000')):
+    def add_head_tail(df, head_timestamp, tail_timestamp):
         # df=df.dropna(how='any',axis=0)
         try:
             # print(df.index.dtype, df)
@@ -363,7 +353,7 @@ class LobFeatureEngineering(object):
         .. [#] Cao, C., Hansch, O., & Wang, X. (2009). The information content of an open limit‐order book. Journal of Futures Markets: Futures, Options, and Other Derivative Products, 29(1), 16-41. 第30页
         """
         QR_level = (df[self.av[level]] - df[self.bv[level]]) / (df[self.av[level]] + df[self.bv[level]])
-        QR_level=pd.Series(QR_level,index=df.index,name=f"li_{level}")
+        QR_level = pd.Series(QR_level, index=df.index, name=f"li_{level}")
         return QR_level
 
     def calc_height_imbalance(self, df, level):
@@ -381,7 +371,7 @@ class LobFeatureEngineering(object):
         # 修改
         nominator = (df[self.ap[level]] - df[self.ap[level - 1]]) - (df[self.bp[level - 1]] - df[self.bp[level]])
         denominator = (df[self.ap[level]] - df[self.ap[level - 1]]) + (df[self.bp[level - 1]] - df[self.bp[level]])
-        HR_level = pd.Series(nominator / denominator,index=df.index,name=f"hi_{level}")
+        HR_level = pd.Series(nominator / denominator, index=df.index, name=f"hi_{level}")
         return HR_level
 
     def calc_spread_tick(self, df, num_levels=5):
@@ -417,9 +407,9 @@ class LobFeatureEngineering(object):
         return spread_tick
 
     def calc_realized_volatility(self, series):  # testit
-        cum_vol = np.cumsum((series+1) ** 2)
+        cum_vol = np.cumsum((series + 1) ** 2)
         denominator = np.arange(1, len(series) + 1, 1)
-        realized_vol=(cum_vol / denominator-1).rename('realized_vol')
+        realized_vol = (cum_vol / denominator - 1).rename('realized_vol')
         return realized_vol
 
     def calc_volume_order_imbalance(self, df: pd.DataFrame):
@@ -527,7 +517,7 @@ class LobFeatureEngineering(object):
 
     def calc_bid_ask_volume_ratio(self, df: pd.DataFrame, level=5):
         df1 = deepcopy(df)
-        cols=[self.av[i] for i in range(1, level + 1)] + [self.bv[i] for i in range(1, level + 1)]
+        cols = [self.av[i] for i in range(1, level + 1)] + [self.bv[i] for i in range(1, level + 1)]
         # df1.loc[:,cols] = np.exp(df1[cols])
         cum_b = 0
         cum_a = 0
@@ -630,8 +620,8 @@ class LobFeatureEngineering(object):
 
         return self.features
 
-    def agg_features(self,features:pd.DataFrame,agg_freq:str):
-        features=features.resample(agg_freq).agg([np.mean,np.std,np.median])
+    def agg_features(self, features: pd.DataFrame, agg_freq: str):
+        features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
         return features
 
 

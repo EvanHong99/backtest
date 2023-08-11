@@ -1,325 +1,34 @@
 # -*- coding=utf-8 -*-
-# @File     : batch_get_order_book_history.py
-# @Time     : 2023/7/28 16:05
+# @File     : order_book_reconstruction.py
+# @Time     : 2023/8/11 9:02
 # @Author   : EvanHong
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
-# @Description: 生成obh，即列为价格，行为该价格下的委托数
+# @Description:
 
-from utils import OrderTypeInt,OrderSideInt,get_order_details,get_trade_details
 import logging
-from collections import defaultdict
 from copy import deepcopy
-from datetime import timedelta
 
-import h5py
-import hdf5plugin
-import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 from sortedcontainers import SortedDict
 from tqdm import tqdm
+from datetime import timedelta
 
-from support import OrderTypeInt, OrderSideInt
 from config import *
-from preprocess import LobTimePreprocessor,LobCleanObhPreprocessor
+import config
+from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
+from support import OrderTypeInt, OrderSideInt
+from utils import OrderTypeInt, OrderSideInt
 
-import os
 
-#
-# def normalize(code, direction=1):
-#     def transform(code: str, direction=direction):
-#         if direction == 1:
-#             if code.endswith('SH'):
-#                 return code[:6] + '.XSHG'
-#             elif code.endswith('SZ'):
-#                 return code[:6] + '.XSHE'
-#             else:
-#                 return code
-#         elif direction == 2:
-#             if code.endswith('XSHG'):
-#                 return code[:6] + '.SH'
-#             elif code.endswith('XSHE'):
-#                 return code[:6] + '.SZ'
-#             else:
-#                 return code
-#
-#     if isinstance(code, str):
-#         return transform(code)
-#     else:
-#         res = []
-#         for c in code:
-#             res.append(transform(c))
-#         return res
-#
-#
-# def read_price_table(fill=True):
-#     # 读取带nan的price table用于后续计算
-#     dtype = defaultdict(np.float32)
-#     dtype['timestamp'] = np.int64
-#     table = pd.read_csv(data_root + 'price_table_20220628.csv', index_col=0, dtype=dtype)
-#     # 对price table进行填充，若当日没有成交，则X ＝开盘参考价。若当日有成交，则 ＝最新成交价 。
-#     open_price = pd.read_csv(data_root + 'HS300_open_20220628.csv', index_col=0)
-#     temp = deepcopy(table.iloc[0].to_frame().T)
-#     temp.iloc[0] = open_price['open'].values
-#     temp.index = [20220628092459990]
-#     table = pd.concat([temp, table])  # 插入第一行（数据来源同花顺）
-#     if fill:
-#         table = table.ffill()
-#     table.index = pd.to_datetime(table.index, format='%Y%m%d%H%M%S%f')
-#     return table
-#
-#
-# def read_return_table(timestamp: str = None, window=100):
-#     """
-#     在timestamp前后window的return
-#
-#     """
-#     # 之所以这么做是因为数据的index没有列名，无法单独指明为int
-#     dtype = defaultdict(np.int64)
-#     for col in pd.read_csv(data_root + f'return_table_20220628.csv', index_col=0, nrows=10).columns:
-#         dtype[col] = np.float32
-#     if timestamp is not None:
-#         index = pd.read_csv(data_root + f'return_table_20220628.csv', dtype=dtype, usecols=[0])
-#         index = pd.to_datetime(index.astype(int).iloc[:, 0], format='%Y%m%d%H%M%S%f')
-#         idx = (index >= pd.to_datetime(timestamp)).idxmax()
-#         return_table = pd.read_csv(data_root + f'return_table_20220628.csv', index_col=0, dtype=dtype,
-#                                    skiprows=max(0, idx - window), nrows=2 * window)
-#     else:
-#         return_table = pd.read_csv(data_root + f'return_table_20220628.csv', index_col=0, dtype=dtype)
-#     return_table.index = pd.to_datetime(return_table.index.astype(int), format='%Y%m%d%H%M%S%f')
-#     return return_table
-#
-#
-# # 计算指数
-# def calc_index_by_price(price_table, weight):
-#     cols = price_table.columns.tolist()
-#     index_price = np.matmul(price_table, weight.loc[cols])
-#     index_price.index = pd.to_datetime(index_price.index, format='%Y%m%d%H%M%S%f')
-#     return index_price
-#
-#
-# # 计算指数
-# def calc_index_by_return(return_table, weight):
-#     return_table = return_table.astype(np.float64)
-#     cols = return_table.columns.tolist()
-#     index_return = np.matmul(return_table, weight.loc[cols])
-#     index_return += 1
-#     index_price = index_return.cumprod()
-#     index_price.index = pd.to_datetime(index_price.index, format='%Y%m%d%H%M%S%f')
-#     return index_price
-#
-#
-# def get_true_index_price(start=pd.to_datetime('2022-06-28 09:30:00'), end=pd.to_datetime('2022-06-28 15:00:00.01')):
-#     index_price_true = pd.read_csv(data_root + 'HS300_20220628.csv', index_col=0, usecols=['time', 'current'])
-#     index_price_true.index = pd.to_datetime(index_price_true.index)
-#     index_price_true = index_price_true.loc[start:end]
-#     index_price_true = index_price_true.reset_index().drop_duplicates('time', keep='last').set_index('time')  # 去重
-#     return index_price_true
-#
-#
-# def align_untrade_time(df, cut_tail=False):
-#     is_series = False
-#     if isinstance(df, pd.Series):
-#         is_series = True
-#         df = df.to_frame()
-#     temp = del_untrade_time(df, cut_tail=cut_tail)
-#     if temp.index[0] > pd.to_datetime('2022-06-28 09:30:00.00'):
-#         temp.loc[pd.to_datetime('2022-06-28 09:30:00.00')] = df.loc[:pd.to_datetime('2022-06-28 09:30:00.00')].iloc[-1]
-#     if temp.index[-1] < pd.to_datetime('2022-06-28 15:00:00.00'):
-#         temp.loc[pd.to_datetime('2022-06-28 15:00:00.00')] = df.loc[:pd.to_datetime('2022-06-28 15:00:00.01')].iloc[-1]
-#     if is_series:
-#         temp = temp.iloc[:, 0]
-#     temp = temp.sort_index()
-#     return temp
-#
-#
-# def del_untrade_time(df, cut_tail=True):
-#     """
-#
-#     :param df:
-#     :param cut_tail: 去掉尾盘3min竞价
-#     :return:
-#     """
-#     is_series = False
-#     if isinstance(df, pd.Series):
-#         is_series = True
-#         df = df.to_frame()
-#     end_time = pd.to_datetime('2022-06-28 15:00:00.01') if not cut_tail else pd.to_datetime('2022-06-28 14:57:00.01')
-#     temp = pd.concat([df.loc[pd.to_datetime('2022-06-28 09:30:00.00'):pd.to_datetime('2022-06-28 11:30:00.01')],
-#                       df.loc[pd.to_datetime('2022-06-28 13:00:00.00'):end_time]])
-#     # if temp.index[0] > pd.to_datetime('2022-06-28 09:30:00.00'):
-#     #     temp.loc[pd.to_datetime('2022-06-28 09:30:00.00')] = df.loc[:pd.to_datetime('2022-06-28 09:30:00.00')].iloc[-1]
-#     # if temp.index[-1] < pd.to_datetime('2022-06-28 15:00:00.00'):
-#     #     temp.loc[pd.to_datetime('2022-06-28 15:00:00.00')] = df.loc[:pd.to_datetime('2022-06-28 15:00:00.01')].iloc[-1]
-#     if is_series:
-#         temp = temp.iloc[:, 0]
-#     temp = temp.sort_index()
-#     return temp
-#
-#
-# def split_by_trade_period(df, ranges):
-#     res = [df.loc[s:e] for s, e in ranges]
-#     return res
-#
-#
-# def to_trade_time(t):
-#     is_str = isinstance(t, str)
-#     timestamp = pd.to_datetime(t).timestamp()
-#     if is_str:
-#         t = pd.to_datetime(t)
-#
-#     if t >= pd.to_datetime(f'{timestamp} 15:00:00.00'):
-#         t = pd.to_datetime(f'{timestamp} 15:00:00.00')
-#     elif t > pd.to_datetime(f'{timestamp} 11:30:00.00') and t < pd.to_datetime(f'{timestamp} 13:00:00.00'):
-#         t = pd.to_datetime(f'{timestamp} 11:30:00.00')
-#     elif t <= pd.to_datetime(f'{timestamp} 09:30:00.00'):
-#         t = pd.to_datetime(f'{timestamp} 09:30:00.00')
-#
-#     return str(t) if is_str else t
-#
-#
-# def get_order_details(data_root, timestamp, stk_name):
-#     """
-#     通过h5文件提取出对应symbol的数据
-#     :param order_f:
-#     :param stk_name:
-#     :return:
-#     """
-#     if stk_name.startswith('6'):
-#         order_f = h5py.File(data_root + f'{timestamp}.orders.XSHG.h5', 'r')
-#     else:
-#         order_f = h5py.File(data_root + f'{timestamp}.orders.XSHE.h5', 'r')
-#     order_dset = order_f[stk_name]
-#     order_details = pd.DataFrame.from_records(order_dset[:])
-#     order_details = order_details.set_index('seq', drop=False)
-#     order_details['timestamp'] = pd.to_datetime(order_details['timestamp'], format='%Y%m%d%H%M%S%f')
-#     order_details['last_traded_timestamp'] = pd.to_datetime(order_details['last_traded_timestamp'].replace(0, np.nan),
-#                                                             format='%Y%m%d%H%M%S%f')
-#     order_details['canceled_timestamp'] = pd.to_datetime(order_details['canceled_timestamp'].replace(0, np.nan),
-#                                                          format='%Y%m%d%H%M%S%f')
-#     order_details['price'] = order_details['price'] / 10000
-#     order_details['filled_amount'] = order_details['filled_amount'] / 10000
-#
-#     temp = order_details.loc[order_details['type'] == OrderTypeInt.bop.value]
-#     if len(temp) > 0:
-#         raise Exception('contents best of party (bop) price order')
-#     return order_details
-#
-#
-# def get_trade_details(data_root, timestamp, stk_name):
-#     """
-#     通过h5文件提取出对应symbol的数据
-#     :param trade_f:
-#     :param stk_name:
-#     :return:
-#     """
-#     try:
-#         if stk_name.startswith('6'):
-#             trade_f = h5py.File(data_root + f'{timestamp}.trades.XSHG.h5', 'r')
-#         else:
-#             trade_f = h5py.File(data_root + f'{timestamp}.trades.XSHE.h5', 'r')
-#         trade_dset = trade_f[stk_name]
-#         trade_details = pd.DataFrame.from_records(trade_dset[:])
-#         trade_details = trade_details.set_index('seq', drop=False)
-#         trade_details['timestamp'] = pd.to_datetime(trade_details['timestamp'], format='%Y%m%d%H%M%S%f')
-#         trade_details['price'] = trade_details['price'] / 10000
-#         return trade_details
-#     except:
-#         print(f"KeyError: Unable to open object (object '{stk_name}' doesn't exist)")
-#         return None
-#
-#
-# def describe(ret: pd.Series, signals, counterpart: bool, params):
-#     """
-#
-#     :param ret: True value
-#     :param signals: when to long or short
-#     :param counterpart: If ret is calculated by counterparty price
-#     :param params:
-#     :return:
-#     """
-#
-#     desc = ret.describe()
-#     eff_opera = (signals != 0).sum()
-#     win_times = (np.logical_and(signals != 0, ret > 0)).sum()
-#     fair_times = (np.logical_and(signals != 0, ret == 0)).sum()
-#     loss_times = (np.logical_and(signals != 0, ret < 0)).sum()
-#
-#     desc['eff_opera'] = eff_opera
-#     desc['win_times'] = win_times
-#     desc['fair_times'] = fair_times
-#     desc['loss_times'] = loss_times
-#     desc['eff_opera_ratio'] = eff_opera / len(signals)
-#     desc['win_rate'] = win_times / (eff_opera + 1)  # 会偏小，但是如果effective operations越多，那么影响越小
-#     desc['fair_rate'] = fair_times / (eff_opera + 1)  # 会偏小，但是如果effective operations越多，那么影响越小
-#     desc['loss_rate'] = loss_times / (eff_opera + 1)  # 会偏小，但是如果effective operations越多，那么影响越小
-#
-#     desc['use_counterpart'] = str(counterpart)
-#     desc = pd.concat([desc, pd.Series(params, name=desc.name)], axis=0)
-#     return desc
-#
-#
-# def calc_IC(factor_mat: pd.DataFrame, ret, name='IC'):
-#     """
-#     计算IC
-#     :param factor_mat:
-#     :param ret:
-#     :param name:
-#     :return:
-#
-#     .. [#] https://blog.csdn.net/The_Time_Runner/article/details/100704785?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-100704785-blog-101203639.235%5Ev38%5Epc_relevant_anti_t3_base&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7ERate-1-100704785-blog-101203639.235%5Ev38%5Epc_relevant_anti_t3_base&utm_relevant_index=2
-#     """
-#     return factor_mat.corrwith(ret).sort_values().rename(name)
-#
-#
-# def std_scale(train, *args):
-#     res = []
-#
-#     def _meta(ret: pd.DataFrame, scaler):
-#         cols = ret.columns
-#         index = ret.index
-#         return pd.DataFrame(scaler.transform(ret), index=index, columns=cols)
-#
-#     scaler = StandardScaler()
-#     scaler.fit(train)
-#     train = _meta(train, scaler)
-#     res.append(train)
-#     for other in args:
-#         other = _meta(other, scaler)
-#         res.append(other)
-#     return tuple(res)
-#
-#
-# def find_daily_limited(ohlc):
-#     """日内涨跌停股票"""
-#     res = []
-#     trade_f = h5py.File(data_root + f'{timestamp}.trades.XSHG.h5', 'r')
-#     symbols = ohlc.index
-#
-#     for stk_name in symbols:
-#         if stk_name.endswith('XSHE'): continue
-#         trade_details = get_trade_details(trade_f, stk_name)
-#         trade_details = trade_details.set_index('timestamp')
-#
-#         if trade_details is None: continue
-#         if abs(trade_details['price'].loc[:f'{date1} 14:27:00.000'].iloc[-1] /
-#                trade_details['price'].loc[f'{date1} 09:30:00.000':].iloc[0]) >= 1.0999:
-#             res.append(stk_name)
-#             continue
-#
-#     return res
-#
-#
 class OrderTypeIntError(TypeError):
     def __init__(self, *arg):
         self.args = arg
 
 
 class Trade(object):
-    global date1
 
-    def __init__(self, seq, bid_seq, ask_seq, quantity, price, timestamp=pd.to_datetime(f'{date1} 09:25:00.000000')):
+    def __init__(self, seq, bid_seq, ask_seq, quantity, price, timestamp):
         self.seq = seq
         self.bid_seq = bid_seq
         self.ask_seq = ask_seq
@@ -577,9 +286,9 @@ class OrderBook(object):
         last_bid_p = -1
         last_ask_p = -1
         if is_open:
-            timestamp = pd.to_datetime(important_times['open_call_auction_end']) + timedelta(milliseconds=10)
+            timestamp = pd.to_datetime(config.important_times['open_call_auction_end']) + timedelta(milliseconds=10)
         else:
-            timestamp = pd.to_datetime(important_times['close_call_auction_start']) + timedelta(milliseconds=10)
+            timestamp = pd.to_datetime(config.important_times['close_call_auction_start']) + timedelta(milliseconds=10)
 
         while self.get_best_bid() >= self.get_best_ask():
             last_bid_p = self.get_best_bid()
@@ -610,7 +319,7 @@ class OrderBook(object):
             self.maintain_collections(order_bid, is_counter_order=True)
             self.maintain_collections(order_ask, is_counter_order=True)
             self.append_to_trade(order_bid, order_ask, can_filled, price,
-                                 pd.to_datetime(important_times['open_call_auction_end']) + timedelta(milliseconds=10))
+                                 pd.to_datetime(config.important_times['open_call_auction_end']) + timedelta(milliseconds=10))
 
         # 计算开盘价
         # todo:两个以上申报价格符合上述条件的，使未成交量最小的申报价格为成交价格；这一条好像没有作用
@@ -998,7 +707,7 @@ class OrderBook(object):
 
     def _exception_cleanup(self):
         self._dict_to_df()
-        self.my_trade_details = self.check_trade_details(trade_details)
+        self.my_trade_details = self.check_trade_details(self.my_trade_details)
 
     def calc_vol_tov(self, trade_details):
         if trade_details.index.name != 'timestamp':
@@ -1009,11 +718,11 @@ class OrderBook(object):
         turnover = (trade_details['quantity'] * trade_details['price']).groupby(level=0).sum().rename('turnover')
         cum_turnover = turnover.cumsum().rename('cum_turnover')
         vol_tov = pd.concat([volume, cum_vol, turnover, cum_turnover], axis=1)
-        res = LobTimePreprocessor.del_untrade_time(vol_tov, cut_tail=True)
-        if len(vol_tov.loc[:important_times['continues_auction_am_start']]) >= 1:
-            head = vol_tov.loc[:important_times['continues_auction_am_start']].iloc[-1]
+        res = LobTimePreprocessor.del_untrade_time(vol_tov,cut_tail=True)
+        if len(vol_tov.loc[:config.important_times['continues_auction_am_start']]) >= 1:
+            head = vol_tov.loc[:config.important_times['continues_auction_am_start']].iloc[-1]
             head['volume'] = head['turnover'] = 0
-            head = head.rename(important_times['continues_auction_am_start'])
+            head = head.rename(config.important_times['continues_auction_am_start'])
             res = pd.concat([head.to_frame().T, res]).head(10)
         return vol_tov
 
@@ -1087,7 +796,7 @@ class OrderBook(object):
             # 开盘集合竞价（左闭右开）
             # 上交所：只能是申报限价单：3.3.6 市价申报只适用于连续竞价期间的交易，本所另有规定的除外。
             # 深交所：3.3.6 本方最优价格申报进入交易主机时，集中申报簿中本方无申报的，申报自动撤销。
-            if timestamp >= important_times['open_call_auction_start'] and timestamp < important_times[
+            if timestamp >= config.important_times['open_call_auction_start'] and timestamp < config.important_times[
                 'open_call_auction_end']:
                 if order.type == OrderTypeInt.bop.value:  # 处理本方最优订单
                     if order.side == OrderSideInt.bid.value and self.get_best_bid() != -1:
@@ -1103,13 +812,13 @@ class OrderBook(object):
                 continue
 
             # 9:25-9:30
-            elif timestamp >= important_times['open_call_auction_end'] and timestamp < important_times[
+            elif timestamp >= config.important_times['open_call_auction_end'] and timestamp < config.important_times[
                 'continues_auction_am_start']:
                 # self.append_to_book(order)
                 continue
 
             # 连续竞价（左闭右开）
-            elif timestamp >= important_times['continues_auction_am_start'] and timestamp < important_times[
+            elif timestamp >= config.important_times['continues_auction_am_start'] and timestamp < config.important_times[
                 'continues_auction_pm_end']:
                 # if DEBUG: return None
                 # 开盘集合竞价尚未撮合
@@ -1138,7 +847,7 @@ class OrderBook(object):
                 continue
 
             # 收盘集合竞价（左闭右开）
-            elif timestamp >= important_times['close_call_auction_start'] and timestamp < important_times[
+            elif timestamp >= config.important_times['close_call_auction_start'] and timestamp < config.important_times[
                 'close_call_auction_end']:
                 self.append_to_book(order)
                 continue
@@ -1165,54 +874,3 @@ class OrderBook(object):
         self._dict_to_df()
         self.my_trade_details = self.check_trade_details(trade_details)
         self.vol_tov = self.calc_vol_tov(self.my_trade_details)
-
-
-if __name__ == '__main__':
-
-    ohlc = pd.read_csv(data_root + 'hs300_ohlc.csv', index_col='code')
-
-    for d in [23,28,29]:
-        date = f'{y}{m}{d}'
-        date1 = f'{y}-{m}-{d}'
-        start = pd.to_datetime(f'{date1} 09:30:00')
-        end = pd.to_datetime(f'{date1} 15:00:00.001')
-
-        important_times = {
-            'open_call_auction_start': pd.to_datetime(f'{date1} 09:15:00.000000'),
-            'open_call_auction_end': pd.to_datetime(f'{date1} 09:25:00.000000'),
-            'continues_auction_am_start': pd.to_datetime(f'{date1} 09:30:00.000000'),
-            'continues_auction_am_end': pd.to_datetime(f'{date1} 11:30:00.000000'),
-            'continues_auction_pm_start': pd.to_datetime(f'{date1} 13:00:00.000000'),
-            'continues_auction_pm_end': pd.to_datetime(f'{date1} 14:57:00.000000'),
-            'close_call_auction_start': pd.to_datetime(f'{date1} 14:57:00.000000'),
-            'close_call_auction_end': pd.to_datetime(f'{date1} 15:00:00.000000'), }
-
-        ranges = [(pd.to_datetime(f'{date1} 09:30:00.000'),
-                   pd.to_datetime(f'{date1} 10:30:00.000') - timedelta(milliseconds=10)),
-                  (pd.to_datetime(f'{date1} 10:30:00.000'),
-                   pd.to_datetime(f'{date1} 11:30:00.000') - timedelta(milliseconds=10)),
-                  (pd.to_datetime(f'{date1} 13:00:00.000'),
-                   pd.to_datetime(f'{date1} 14:00:00.000') - timedelta(milliseconds=10)),
-                  (pd.to_datetime(f'{date1} 14:00:00.000'),
-                   pd.to_datetime(f'{date1} 14:57:00.000') - timedelta(milliseconds=10))]
-
-        # for stk_names in list(code_dict.keys())[1:12]:
-        for stk_name in ['贵州茅台']:
-            if code_dict[stk_name].endswith('XSHE'): continue
-            print(f"start {stk_name}")
-            symbol = code_dict[stk_name]
-            order_details = get_order_details(data_root, date, symbol)
-            trade_details = get_trade_details(data_root, date, symbol)
-
-            self = OrderBook(stk_name,symbol,snapshot_window=10)
-            self.reconstruct(order_details, trade_details)
-
-            self.check_trade_details(trade_details)
-
-            self.price_history.to_csv(detail_data_root + FILE_FMT_price_history.format(date,stk_name), index=False)
-            self.order_book_history.to_csv(detail_data_root + FILE_FMT_order_book_history.format(date,stk_name))
-            self.my_trade_details.to_csv(detail_data_root + FILE_FMT_my_trade_details.format(date,stk_name), index=False)
-            self.vol_tov.to_csv(detail_data_root + FILE_FMT_vol_tov.format(date,stk_name), index=True)
-            print(f"finish {stk_name}")
-
-            # pd.concat([trade_details['price'].reset_index()['price'].rename('ground_truth'),self.my_trade_details['price'].rename('recnstr')],axis=1).plot(title=stk_names).get_figure().savefig(res_root+f'current_{stk_names}.png',dpi=1200,bbox_inches='tight')

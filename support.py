@@ -12,7 +12,8 @@ import h5py
 import hdf5plugin
 import numpy as np
 import pandas as pd
-
+from datetime import timedelta
+import config
 
 class OrderSideInt(Enum):
     bid = 66  # 买
@@ -97,3 +98,52 @@ def get_trade_details(data_root, date, symbol):
     except:
         print(f"KeyError: Unable to open object (object '{symbol}' doesn't exist)")
         return None
+
+def update_date(yy: str, mm: str, dd: str):
+    import config
+
+    # global y
+    # global m
+    # global d
+    # global date
+    # global date1
+    # global start
+    # global end
+    # global important_times
+    # global ranges
+
+    config.y = yy
+    config.m = mm
+    config.d = dd
+
+    config.date = f'{config.y}{config.m}{config.d}'
+    config.date1 = f'{config.y}-{config.m}-{config.d}'
+    config.start = pd.to_datetime(f'{config.date1} 09:30:00')
+    config.end = pd.to_datetime(f'{config.date1} 15:00:00.001')
+
+    config.important_times = {
+        'open_call_auction_start': pd.to_datetime(f'{config.date1} 09:15:00.000000'),
+        'open_call_auction_end': pd.to_datetime(f'{config.date1} 09:25:00.000000'),
+        'continues_auction_am_start': pd.to_datetime(f'{config.date1} 09:30:00.000000'),
+        'continues_auction_am_end': pd.to_datetime(f'{config.date1} 11:30:00.000000'),
+        'continues_auction_pm_start': pd.to_datetime(f'{config.date1} 13:00:00.000000'),
+        'continues_auction_pm_end': pd.to_datetime(f'{config.date1} 14:57:00.000000'),
+        'close_call_auction_start': pd.to_datetime(f'{config.date1} 14:57:00.000000'),
+        'close_call_auction_end': pd.to_datetime(f'{config.date1} 15:00:00.000000'), }
+
+    config.ranges = [(pd.to_datetime(f'{config.date1} 09:30:00.000'),
+               pd.to_datetime(f'{config.date1} 10:30:00.000') - timedelta(milliseconds=10)),
+              (pd.to_datetime(f'{config.date1} 10:30:00.000'),
+               pd.to_datetime(f'{config.date1} 11:30:00.000') - timedelta(milliseconds=10)),
+              (pd.to_datetime(f'{config.date1} 13:00:00.000'),
+               pd.to_datetime(f'{config.date1} 14:00:00.000') - timedelta(milliseconds=10)),
+              (pd.to_datetime(f'{config.date1} 14:00:00.000'),
+               pd.to_datetime(f'{config.date1} 14:57:00.000') - timedelta(milliseconds=10))]
+    # print(f"in function update to date {config.date} {config.date1}")
+    return config.y,config.m,config.d,config.date,config.date1,config.start,config.end,config.important_times,config.ranges
+
+if __name__ == '__main__':
+    for dd in [23,28,29]:
+        update_date('2022','06',str(dd))
+        print(f"update to date {config.date} {config.date1}")
+

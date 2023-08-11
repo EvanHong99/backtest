@@ -163,12 +163,12 @@ class LobBackTester(BaseTester):
         alldatas = ltp.split_by_trade_period(data)
         alldatas = [ltp.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
                                       tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in
-                    zip(alldatas, ranges)]
+                    zip(alldatas, config.ranges)]
         # 不能对alldatas change freq，否则会导致损失数据点
         self.features = [self.calc_features(data, level=use_level) for data in alldatas]
         self.features = [ltp.add_head_tail(feature, head_timestamp=pd.to_datetime(s),
                                            tail_timestamp=pd.to_datetime(e)) for feature, (s, e) in
-                         zip(self.features, ranges)]
+                         zip(self.features, config.ranges)]
         # self.features = [ltp.change_freq(feature, freq=freq) for feature in self.features]
         # 过早change freq会导致损失数据点
         # alldatas = [ltp.change_freq(d, freq=freq) for d in alldatas]

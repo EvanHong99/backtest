@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from config import *
+import config
 from support import *
 from preprocess import LobTimePreprocessor,LobCleanObhPreprocessor
 import pickle
@@ -105,15 +106,15 @@ class LobDataFeed(BaseDataFeed):
         self.order_details=self.get_order_details(data_root=data_root,date=date,symbol=symbol)
         self.trade_details = LobTimePreprocessor.del_untrade_time(self.trade_details, cut_tail=False)
         self.trade_details = LobTimePreprocessor.add_head_tail(self.trade_details,
-                                                                    head_timestamp=important_times[
+                                                                    head_timestamp=config.important_times[
                                                                         'continues_auction_am_start'],
-                                                                    tail_timestamp=important_times[
+                                                                    tail_timestamp=config.important_times[
                                                                         'close_call_auction_end'])
         self.order_details = LobTimePreprocessor.del_untrade_time(self.order_details, cut_tail=False)
         self.order_details = LobTimePreprocessor.add_head_tail(self.order_details,
-                                                                    head_timestamp=important_times[
+                                                                    head_timestamp=config.important_times[
                                                                         'continues_auction_am_start'],
-                                                                    tail_timestamp=important_times[
+                                                                    tail_timestamp=config.important_times[
                                                                         'close_call_auction_end'])
 
         return self.trade_details,self.order_details
@@ -132,9 +133,9 @@ class LobDataFeed(BaseDataFeed):
         # print(self.order_book_history)
         self.order_book_history = LobTimePreprocessor.del_untrade_time(self.order_book_history, cut_tail=False)
         self.order_book_history = LobTimePreprocessor.add_head_tail(self.order_book_history,
-                                                                    head_timestamp=important_times[
+                                                                    head_timestamp=config.important_times[
                                                                         'continues_auction_am_start'],
-                                                                    tail_timestamp=important_times[
+                                                                    tail_timestamp=config.important_times[
                                                                         'close_call_auction_end'])
 
         self.current = pd.read_csv(self.file_root + FILE_FMT_price_history.format(self.date,self.stk_name)).set_index('timestamp')[
@@ -162,13 +163,6 @@ class LobDataFeed(BaseDataFeed):
 
         return self.vol_tov
 
-def test_LobCleanObhPreprocessor():
-    stk_name="贵州茅台"
-    datafeed=LobDataFeed(detail_data_root,date,stk_name=stk_name)
-    datafeed.load_basic()
-    cobh_pp=LobCleanObhPreprocessor(datafeed,snapshot_window=5)
-    cobh_pp._gen_clean_obh(datafeed)
-    cobh_pp.gen_and_save(detail_data_root,date,stk_name=stk_name)
 
 if __name__ == '__main__':
     pass
