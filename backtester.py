@@ -5,6 +5,8 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
+from __future__ import annotations
+
 import datetime
 import warnings
 from abc import abstractmethod
@@ -15,6 +17,7 @@ import pandas as pd
 
 from broker import Broker
 from config import *
+import config
 from support import *
 from datafeed import LobDataFeed, LobModelFeed
 from observer import LobObserver
@@ -73,7 +76,7 @@ class LobBackTester(BaseTester):
     def __init__(self,
                  model_root: str,
                  file_root: str,
-                 dates: List[str],
+                 dates: List[str|int],
                  stk_names: List[str],
                  levels: int,
                  target: str,
@@ -129,43 +132,44 @@ class LobBackTester(BaseTester):
         :param file_root:
         :param date:
         :param stk_name:
-        :return: pd.DataFrame,(clean_obh_dict+vol_tov).asfreq(freq='10ms', method='ffill')
+        :return: pd.DataFrame,(clean_obh_dict+vol_tov), random freq
         """
-        self.datafeed = LobDataFeed(file_root=file_root, date=date, stk_name=stk_name)
-        self.clean_obh = self.datafeed.load_clean_obh(snapshot_window=self.levels)
-        self.vol_tov = self.datafeed.load_vol_tov()
-        self.events = self.datafeed.load_events()
+        self.datafeed = LobDataFeed()
+        self.clean_obh = self.datafeed.load_clean_obh(file_root=file_root, date=date, stk_name=stk_name,snapshot_window=self.levels)
+        self.vol_tov = self.datafeed.load_vol_tov(file_root=file_root, date=date, stk_name=stk_name)
+        self.events = self.datafeed.load_events(file_root=file_root, date=date, stk_name=stk_name)
         # self.trade_details,self.order_details=self.datafeed.load_details(data_root,date,code_dict[stk_name])
         data = pd.concat([self.clean_obh, self.vol_tov, self.events], axis=1).ffill()
-        # 必须先将clean_obh填充到10ms，否则交易频率是完全不规律的，即可能我只想用5个frame的数据来预测，但很可能用上了十秒的信息
-        data = data.asfreq(freq='10ms', method='ffill')
         return data
 
-    def calc_features(self, df, level):
+    def calc_features(self, df, level,to_freq=None):
         # todo: 时间不连续、不规整，过于稀疏，归一化细节
         fe = LobFeatureEngineering()
-        feature = fe.generate(df, level=level)
+        feature = fe.generate_cross_section(df, level=level)
         feature = pd.concat([df, feature], axis=1)
         feature.index = pd.to_datetime(feature.index)
         feature = feature.sort_index()
-        feature = fe.agg_features(feature, agg_freq="5min")
+        # 必须先将clean_obh填充到10ms，否则交易频率是完全不规律的，即可能我只想用5个frame的数据来预测，但很可能用上了十秒的信息
+        if to_freq is not None:
+            feature = feature.asfreq(freq=to_freq, method='ffill')
         return feature
 
     # testit
-    def preprocess_data(self, data) -> list:
+    def preprocess_data(self, data,level,to_freq=None) -> list:
         """
         将数据划分为4份，每份一小时
         :param data: 10ms
-        :return:
+        :return: 10ms
         """
         ltp = LobTimePreprocessor()
         # 必须先将数据切分，否则会导致11:30和13:00之间出现跳变
         alldatas = ltp.split_by_trade_period(data)
+        # 不能对alldatas change freq，否则会导致损失数据点
         alldatas = [ltp.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
                                       tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in
                     zip(alldatas, config.ranges)]
-        # 不能对alldatas change freq，否则会导致损失数据点
-        self.features = [self.calc_features(data, level=use_level) for data in alldatas]
+        self.features = [self.calc_features(data, level=level,to_freq=to_freq) for data in
+                         alldatas]  # 尚未agg
         self.features = [ltp.add_head_tail(feature, head_timestamp=pd.to_datetime(s),
                                            tail_timestamp=pd.to_datetime(e)) for feature, (s, e) in
                          zip(self.features, config.ranges)]
@@ -175,19 +179,29 @@ class LobBackTester(BaseTester):
         # alldatas = [pd.merge(data, feature, left_index=True, right_index=True) for data, feature in
         #                  zip(alldatas, self.features)]
 
+        # todo 添加动量features
+        ...
+
+        self.features = [feature.fillna(0) for feature in self.features ]
         return self.features
 
-    def scale_data(self, alldatas, stk_name):
+    def scale_data(self, alldatas, stk_name,data_pp):
+        """
+
+        :param alldatas:
+        :param stk_name:
+        :param data_pp: data preprocessor
+        :return:
+        """
         Xs = []
         for num in range(len(alldatas)):
-            dp = AggDataPreprocessor()
-            param = dp.sub_illegal_punctuation(str(self.param))
-            dp.load_scaler(scaler_root, FILE_FMT_scaler.format(stk_name, num, param))
+            param = data_pp.sub_illegal_punctuation(str(self.param))
+            data_pp.load_scaler(scaler_root, FILE_FMT_scaler.format(stk_name, num, param))
 
             X = alldatas[num]
             cols = X.columns
             index = X.index
-            X = pd.DataFrame(dp.scaler.transform(X), columns=cols, index=index)
+            X = pd.DataFrame(data_pp.scaler.transform(X), columns=cols, index=index)
 
             Xs.append(X)
 
@@ -204,12 +218,19 @@ class LobBackTester(BaseTester):
         :param target: class 'Target', ret, mid_p_ret
         :return:
         """
-        _Xs=[]
-        _ys=[]
-        for X,feature in zip(Xs,features):
+        _Xs = []
+        _ys = []
+        for X, feature in zip(Xs, features):
 
             start_time = X.index
             tar_time = start_time + used_timedelta + pred_timedelta
+            # 波动率型
+            if target==Target.vol.name:
+                ...
+                continue
+
+
+            # return 类型的target
             if target == Target.ret.name:
                 tar_col = LobColTemplate().current
             elif target == Target.mid_p_ret.name:
@@ -218,7 +239,6 @@ class LobBackTester(BaseTester):
                 raise NotImplementedError()
             tar = feature[tar_col]
 
-            # return 类型的target
             available_time = [True if x in feature.index else False for x in tar_time]
             start_time = start_time[available_time]
             tar_time = tar_time[available_time]
@@ -229,10 +249,9 @@ class LobBackTester(BaseTester):
             _Xs.append(X)
             _ys.append(y)
 
-            # 波动率型
-            ...
 
-        return _Xs,_ys
+
+        return _Xs, _ys
 
     def transform_data(self, alldatas, stk_name):
         """
@@ -275,15 +294,24 @@ class LobBackTester(BaseTester):
                 self.stk_name = stk_name
 
                 self.models = self.load_models(self.model_root, stk_name)
-                # 10ms data
-                self.alldata[date][stk_name] = self.load_data(file_root=self.file_root, date=date, stk_name=stk_name)
-                self.alldatas[date][stk_name] = self.preprocess_data(self.alldata[date][stk_name])
+
+                self.alldata[date][stk_name] = self.load_data(file_root=self.file_root, date=date,
+                                                              stk_name=stk_name)  # random freq
+
+                self.alldatas[date][stk_name] = self.preprocess_data(
+                    self.alldata[date][stk_name],level=use_level,to_freq=min_freq)  # min_freq, 10ms
+
+                dp=AggDataPreprocessor()
+                # agg_freq=1min
+                self.alldatas[date][stk_name]=[dp.agg_features(feature,agg_freq=agg_freq,pred_n_steps=pred_n_steps,use_n_steps=use_n_steps) for feature in self.alldatas[date][stk_name]]
+
                 # self.Xs, self.ys = self.transform_data(self.alldatas[date][stk_name],stk_name)
-                self.Xs = self.scale_data(self.alldatas[date][stk_name], stk_name)
-                self.Xs,self.ys = self.match_y(self.Xs, self.alldatas[date][stk_name],
-                                        used_timedelta=timedelta(milliseconds=int(freq[:-2]) * use_n_steps),
-                                        pred_timedelta=timedelta(milliseconds=int(freq[:-2]) * pred_n_steps),
-                                        target=Target.mid_p_ret.name)
+
+                self.Xs = self.scale_data(self.alldatas[date][stk_name], stk_name,data_pp=dp)
+                self.Xs, self.ys = self.match_y(self.Xs, self.alldatas[date][stk_name],
+                                                used_timedelta=timedelta(minutes=int(freq[:-3]) * use_n_steps),
+                                                pred_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps),
+                                                target=Target.mid_p_ret.name)
 
                 y_preds = pd.Series()
                 for num, (X_test, y_test, model) in enumerate(zip(self.Xs, self.ys, self.models)):

@@ -5,6 +5,7 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description: 需要保证该文件clean，不要加入过多无用算法
+import logging
 import re
 from copy import deepcopy
 from datetime import timedelta
@@ -128,8 +129,28 @@ class AggDataPreprocessor(BaseDataPreprocessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def agg_X(self, X, use_n_steps):
-        pass
+    @staticmethod
+    def agg_features(features: pd.DataFrame, agg_freq, pred_n_steps, use_n_steps):
+        """
+        testit
+        Parameters
+        ----------
+        features
+        agg_freq
+        pred_n_steps
+        use_n_steps
+
+        Returns
+        -------
+
+        """
+        # features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
+
+        agg_rows = int(agg_timedelta / min_timedelta)
+        step_rows = int(step_timedelta / min_timedelta)
+        features = features.rolling(agg_rows, min_periods=agg_rows, step=step_rows, closed='left', center=False).agg(
+            [np.mean, np.std, np.median])
+        return features
 
     @classmethod
     def get_flattened_Xy(cls, alldatas, num, target, pred_n_steps, use_n_steps, drop_current):
@@ -206,12 +227,14 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         obh.columns = obh.columns.astype(float)
         obh_v = LobCleanObhPreprocessor.split_volume(obh, window_size=snapshot_window)
         obh_p = LobCleanObhPreprocessor.split_price(obh, window_size=snapshot_window)
+        mid_p = (obh_p[str(LobColTemplate('a', 1, 'p'))] + obh_p[str(LobColTemplate('a', 1, 'p'))]).rename('mid_p') / 2
 
-        clean_obh = pd.concat([obh_p, obh_v, current], axis=1).ffill().bfill()
+        clean_obh = pd.concat([obh_p, obh_v, current, mid_p], axis=1).ffill().bfill()
         clean_obh.index = pd.to_datetime(clean_obh.index)
         clean_obh = LobTimePreprocessor.del_untrade_time(clean_obh, cut_tail=True)
         clean_obh = LobTimePreprocessor.add_head_tail(clean_obh,
-                                                      head_timestamp=config.important_times['continues_auction_am_start'],
+                                                      head_timestamp=config.important_times[
+                                                          'continues_auction_am_start'],
                                                       tail_timestamp=config.important_times['continues_auction_pm_end'])
 
         return clean_obh
@@ -249,7 +272,8 @@ class LobTimePreprocessor(BasePreprocessor):
 
         end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
             'continues_auction_pm_end']
-        a = df.loc[config.important_times['continues_auction_am_start']:config.important_times['continues_auction_am_end']]
+        a = df.loc[
+            config.important_times['continues_auction_am_start']:config.important_times['continues_auction_am_end']]
         b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
         temp = pd.concat([a, b], axis=0)
 
@@ -265,20 +289,24 @@ class LobTimePreprocessor(BasePreprocessor):
         except Exception as e:
             print('add_head_tail', df.index[0], head_timestamp, df.index[-1], tail_timestamp)
             raise e
-        df.loc[pd.to_datetime(tail_timestamp)] = df.iloc[-1]
-        df.loc[pd.to_datetime(head_timestamp)] = df.iloc[0]
-        df = df.sort_index()
-        return df
-
-    @staticmethod
-    def split_by_trade_period(df):
-        res = [df.loc[s:e] for s, e in ranges]
-        res = [LobTimePreprocessor.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
-                                                 tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in zip(res, ranges)]
+        res=df.copy(deep=True)
+        res.loc[pd.to_datetime(tail_timestamp)] = df.iloc[-1].copy(deep=True)
+        res.loc[pd.to_datetime(head_timestamp)] = df.iloc[0].copy(deep=True)
+        res = res.sort_index()
         return res
 
     @staticmethod
-    def change_freq(df, freq='200ms'):
+    def split_by_trade_period(df):
+        res = [df.loc[s:e] for s, e in config.ranges]
+        res = [LobTimePreprocessor.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
+                                                 tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in
+               zip(res, config.ranges)]
+        return res
+
+    @staticmethod
+    def change_freq(df, freq):
+        """deprecated"""
+        logging.warning("change_freq deprecated", FutureWarning)
         return df.asfreq(freq='10ms', method='ffill').asfreq(freq=freq)
 
     @staticmethod
@@ -516,17 +544,24 @@ class LobFeatureEngineering(object):
     #     return event_df
 
     def calc_bid_ask_volume_ratio(self, df: pd.DataFrame, level=5):
+        """
+
+        :param df:
+        :param level:
+        :return:
+
+        .. [x] Price jump prediction in Limit Order Book. Ban Zheng, Eric Moulines,Fr´ed´eric Abergel
+        """
         df1 = deepcopy(df)
         cols = [self.av[i] for i in range(1, level + 1)] + [self.bv[i] for i in range(1, level + 1)]
         # df1.loc[:,cols] = np.exp(df1[cols])
-        cum_b = 0
-        cum_a = 0
 
+        bavr = 1
         res = pd.DataFrame()
         for i in range(1, level + 1):
-            cum_b += df1[self.bv[i]]
-            cum_a += df1[self.av[i]]
-            W_i = pd.Series(np.log(cum_b / cum_a), name=f'bid_ask_volume_ratio{i}')
+            bavr *= np.clip(df1[self.bv[i]] / df1[self.av[i]], a_min=-32,
+                            a_max=32)  # limit the value between the range of float32
+            W_i = pd.Series(bavr, name=f'bid_ask_volume_ratio{i}')
             res = pd.concat([res, W_i], axis=1)
 
         return res
@@ -580,7 +615,13 @@ class LobFeatureEngineering(object):
         """
         pass
 
-    def generate(self, clean_obh, level=5):
+    def generate_cross_section(self, clean_obh, level=5):
+        """
+        计算截面features，不包含不同时刻数据所构建的因子
+        :param clean_obh:
+        :param level:
+        :return:
+        """
 
         self.mp = self.calc_mid_price(clean_obh)
         # 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。todo 好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
@@ -620,9 +661,9 @@ class LobFeatureEngineering(object):
 
         return self.features
 
-    def agg_features(self, features: pd.DataFrame, agg_freq: str):
-        features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
-        return features
+    # def agg_features(self, features: pd.DataFrame, agg_freq: str):
+    #     features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
+    #     return features
 
 
 if __name__ == '__main__':

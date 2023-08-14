@@ -7,8 +7,11 @@
 # @Description:
 
 import logging
+from collections import defaultdict
 from copy import deepcopy
+from typing import Union
 
+import numpy as np
 import pandas as pd
 from sortedcontainers import SortedDict
 from tqdm import tqdm
@@ -18,7 +21,6 @@ from config import *
 import config
 from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
 from support import OrderTypeInt, OrderSideInt
-from utils import OrderTypeInt, OrderSideInt
 
 
 class OrderTypeIntError(TypeError):
@@ -50,6 +52,7 @@ class Order(object):
         self.quantity = quantity
         self.price = price
         self.filled_quantity = filled_quantity
+        self.can_filled = self.quantity - self.filled_quantity
         self.filled_amount = filled_amount
         self.last_traded_timestamp = last_traded_timestamp
         self.canceled_timestamp = canceled_timestamp
@@ -72,14 +75,16 @@ class Order(object):
         #         if self.type==OrderTypeInt['limit'].value:
         #             assert self.price==price
 
-        assert quantity <= self.can_filled()
+        assert quantity <= self.can_filled
         self.last_traded_timestamp = timestamp
         self.filled_quantity += quantity
         self.filled_amount += price * quantity
+        self.can_filled -= quantity
         # 市价单平均价格会变化
         if self.type == OrderTypeInt['market'].value:
             self.price = self.filled_amount / self.filled_quantity  # 平均价格
         self._set_filled()
+        return quantity
 
     def _set_filled(self):
         if self.quantity == self.filled_quantity:
@@ -92,9 +97,9 @@ class Order(object):
         else:
             return False
 
-    def can_filled(self):
-        """quantity to fill"""
-        return self.quantity - self.filled_quantity
+    # def can_filled(self):
+    #     """quantity to fill"""
+    #     return self.quantity - self.filled_quantity
 
     def cancel(self, canceled_seq, canceled_timestamp):
         self.canceled_seq = canceled_seq
@@ -132,17 +137,20 @@ class OrderBook(object):
 
     """
 
-    def __init__(self, stk_name, symbol, snapshot_window=10):
+    def __init__(self, stk_name, symbol, snapshot_window=10,snapshot_ABtest=False):
         self.stk_name = stk_name
         self.symbol = symbol
         self.exchange = 'XSHG' if self.symbol.endswith('XSHG') else 'XSHE'
         self.snapshot_window = snapshot_window
+        self.snapshot_ABtest=snapshot_ABtest
         # 做的简单的话只需要存交易的股数
         self.current = -1
         self.close_p = -1
         self.open_p = -1
         self.book_bid = SortedDict()  # 买，需要用 .peekitem(-1) 去索引
         self.book_ask = SortedDict()  # 卖
+        self.pv_dict_bid = SortedDict()  # price-volume
+        self.pv_dict_ask = SortedDict()  # price-volume
         self.order_queue_dict = {}  # 有序dict，根据插入顺序排序
         self.trade_counter = 0
         self.trade_queue = []  # 有序list，根据插入顺序排序
@@ -156,6 +164,7 @@ class OrderBook(object):
         self.price_history = None
         self.price_history_idx = 0
         self.order_book_history_dict = {}  # timestamp发生交易后盘口数据
+        self.order_book_history_dict1 = {}  # timestamp发生交易后盘口数据
         self.order_book_history = None
 
         self.open_call_auction_matched = False
@@ -213,18 +222,25 @@ class OrderBook(object):
             # order.type = OrderTypeInt.limit.value
             # order.price = self.get_best_ask() if order.side == OrderSideInt.ask.value else self.get_best_bid()
             # logging.warning(f'transform it to limit order {str(order)}')
+
+        # order book
         # 浅拷贝可以实现对dict的更改
         if order.side == OrderSideInt.bid.value:
             book = self.book_bid
+            pv_dict = self.pv_dict_bid
         else:
             book = self.book_ask
+            pv_dict = self.pv_dict_ask
 
         temp = book.get(order.price)
         if temp is None:
             book[order.price] = {order.seq: order}
+            pv_dict[order.price] = order.can_filled
         else:
             book[order.price][order.seq] = order
+            pv_dict[order.price] += order.can_filled
 
+        # order queue
         self.order_queue_dict[order.seq] = order
 
     def append_to_trade(self, order, counter_order, filled, price, timestamp=None):
@@ -241,7 +257,7 @@ class OrderBook(object):
     def sum_volume(self, order_dict):
         s = 0
         for seq, order in order_dict.items():
-            s += order.can_filled()
+            s += order.can_filled
         return s
 
     def calc_p_call_auction(self, is_open):
@@ -282,6 +298,12 @@ class OrderBook(object):
         return price
 
     def match_call_auction(self, is_open=True):
+        """
+        todo 整合trade进来
+
+        :param is_open:
+        :return:
+        """
         proc_sequence = {}
         last_bid_p = -1
         last_ask_p = -1
@@ -316,10 +338,19 @@ class OrderBook(object):
             order_ask.fill_quantity(timestamp, can_filled, price)
 
             # 更新collections
+            self._sub_pv_dict(self.pv_dict_bid, order_bid.price, can_filled)
+            self._sub_pv_dict(self.pv_dict_ask, order_ask.price, can_filled)
+            # assert self.pv_dict_bid.get(order_bid.price) is not None and self.pv_dict_bid.get(order_bid.price)>=can_filled
+            # assert self.pv_dict_ask.get(order_ask.price) is not None and self.pv_dict_ask.get(order_ask.price)>=can_filled
+            # self.pv_dict_bid[order_bid.price] -= can_filled
+            # self.pv_dict_ask[order_ask.price] -= can_filled
+            # if self.pv_dict_bid[order_bid.price] == 0: self.pv_dict_bid.pop(order_bid.price)
+            # if self.pv_dict_ask[order_ask.price] == 0: self.pv_dict_ask.pop(order_ask.price)
             self.maintain_collections(order_bid, is_counter_order=True)
             self.maintain_collections(order_ask, is_counter_order=True)
             self.append_to_trade(order_bid, order_ask, can_filled, price,
-                                 pd.to_datetime(config.important_times['open_call_auction_end']) + timedelta(milliseconds=10))
+                                 pd.to_datetime(config.important_times['open_call_auction_end']) + timedelta(
+                                     milliseconds=10))
 
         # 计算开盘价
         # todo:两个以上申报价格符合上述条件的，使未成交量最小的申报价格为成交价格；这一条好像没有作用
@@ -333,8 +364,32 @@ class OrderBook(object):
             raise Exception('match_call_auction error')
 
         return new_p
+    
+    @staticmethod
+    def _sub_pv_dict(pv_dict:Union[SortedDict], price, sub_quantity):
+        """
+        从pv_dict中删除某个订单的unfilled quantity
+        Parameters
+        ----------
+        pv_dict
+        sub_quantity:
+            要删除的数量
+
+        Returns
+        -------
+
+        """
+        assert (pv_dict.get(price) is not None) and (pv_dict[price] >= sub_quantity)
+        pv_dict[price]-=sub_quantity
+        if pv_dict[price] == 0: pv_dict.pop(price)
 
     def maintain_collections(self, order, is_counter_order):
+        """
+        order_queue_dict, 
+        :param order: 
+        :param is_counter_order: 
+        :return: 
+        """
         self.order_queue_dict[order.seq] = order
         if is_counter_order:  # 只有对手方需要维护已经存储的信息，新的order可以直接在外部loop实现多笔交易
             assert (order.type == OrderTypeInt.limit.value) or (order.type == OrderTypeInt.bop.value)
@@ -357,7 +412,7 @@ class OrderBook(object):
 
         else:
             # 一般在外面做append_to_book的逻辑，因为一个order可以在while中连续吃对手单
-            ...
+            pass
 
     def proc_bop_order(self, order):
         assert order.type == OrderTypeInt.bop.value
@@ -545,8 +600,8 @@ class OrderBook(object):
         assert counter_order.type == OrderTypeInt.limit.value
         assert counter_order.seq < order.seq
 
-        can_filled = order.can_filled()
-        can_filled_counter = counter_order.can_filled()
+        can_filled = order.can_filled
+        can_filled_counter = counter_order.can_filled
         filled = min(can_filled, can_filled_counter)
         timestamp = order.timestamp
         price = counter_order.price if price is None else price
@@ -555,7 +610,12 @@ class OrderBook(object):
         order.fill_quantity(timestamp, filled, price)
         counter_order.fill_quantity(timestamp, filled, price)
 
-        # 更新order相关的所有collections
+        # 更新order相关的所有collections。需要注意order是市价单的情况
+        pv_dict=self.pv_dict_bid if counter_order.side==OrderSideInt.bid.value else self.pv_dict_ask # 仅需关注counter order，因为order还未加入到pv_dict
+        self._sub_pv_dict(pv_dict,counter_order.price,filled)
+        # assert pv_dict.get(counter_order.price) is not None and pv_dict.get(counter_order.price) >= filled
+        # pv_dict[counter_order.price] -= filled
+        # if pv_dict[counter_order.price] == 0: pv_dict.pop(counter_order.price)
         self.maintain_collections(order, is_counter_order=False)
         self.maintain_collections(counter_order, is_counter_order=True)
 
@@ -603,17 +663,43 @@ class OrderBook(object):
         else:
             raise OrderTypeIntError('reconstruct OrderTypeInt error')
 
-    def snapshot(self, timestamp, window=5):
+    def __snapshot(self, timestamp, window):
         """
         盘口快照，并存储于history
-        window: window档盘口数据
+
+        Note
+        ----
+        仅用于校验
+
+        Parameters
+        ----------
+        timestamp
+        window:
+            window档盘口数据
+
+        Returns
+        -------
+
         """
+        # logging.warning(str(self.__snapshot)+" is deprecated",FutureWarning)
         window_ask = min(len(self.book_ask), window)
         window_bid = min(len(self.book_bid), window)
         p_v = {k: self.sum_volume(v) for k, v in self.book_bid.items()[-window_bid:]}
         p_v.update({k: self.sum_volume(v) for k, v in self.book_ask.items()[:window_ask]})
-        self.order_book_history_dict[timestamp] = p_v
+        self.order_book_history_dict1[timestamp] = p_v
         # return this_order_book
+
+    def snapshot(self, timestamp, window):
+        """
+        盘口快照，并存储于history
+        window: window档盘口数据
+        """
+        # logging.warning(str(self.__snapshot)+" is deprecated",FutureWarning)
+        window_bid = min(len(self.pv_dict_bid.keys()), window)
+        window_ask = min(len(self.pv_dict_ask.keys()), window)
+        p_v = {k: v for k, v in self.pv_dict_bid.items()[-window_bid:]}
+        p_v.update({k: v for k, v in self.pv_dict_ask.items()[:window_ask]})
+        self.order_book_history_dict[timestamp] = p_v
 
     def get_trade_details(self, last_n=0):
         if last_n == 0:
@@ -624,6 +710,23 @@ class OrderBook(object):
         best_book_ask = pd.DataFrame([v.__dict__ for k, v in self.book_ask[self.get_best_ask()].items()])
         best_book_bid = pd.DataFrame([v.__dict__ for k, v in self.book_bid[self.get_best_bid()].items()])
         return best_book_bid, best_book_ask
+
+    def check_snapshot(self,timestamp,window):
+        """
+        订单簿价格、数量匹配，已生成的order_book_history相同
+        :return:
+        """
+        assert ((np.array(list(self.book_bid.keys()))-np.array(list(self.pv_dict_bid.keys())))==0).all() 
+        assert ((np.array(list(self.book_ask.keys()))-np.array(list(self.pv_dict_ask.keys())))==0).all() 
+
+        # self.__snapshot(timestamp,window)
+        # self.snapshot(timestamp,window)
+
+        snap=list(self.order_book_history_dict.values())[-1]
+        snap1=list(self.order_book_history_dict1.values())[-1]
+        assert (np.array(list(snap.keys()))-np.array(list(snap1.keys()))==0).all()
+        assert (np.array(list(snap.values()))-np.array(list(snap1.values()))==0).all()
+
 
     def check_trade_details(self, trade_details, last_n=0):
         """对比trade details"""
@@ -673,14 +776,12 @@ class OrderBook(object):
         # 最后将order_book_history的列（价格），按照降序排列
 
         self.order_book_history = pd.DataFrame(self.order_book_history_dict)
-        # print(1,self.order_book_history)
         self.order_book_history = self.order_book_history.sort_index(ascending=False).T
-        # print(2,self.order_book_history)
-        # self.order_book_history=self.order_book_history.sort_index(ascending=True).T
-        # print(3,self.order_book_history)
+        # self.order_book_history1 = pd.DataFrame(self.order_book_history_dict1)
+        # self.order_book_history1 = self.order_book_history1.sort_index(ascending=False).T
+
 
         self.price_history = pd.DataFrame(self.price_history_dict)
-        #         print(self.price_history)
         self.price_history = self.price_history.T
         self.price_history = self.price_history.sort_index(ascending=True)
 
@@ -718,12 +819,12 @@ class OrderBook(object):
         turnover = (trade_details['quantity'] * trade_details['price']).groupby(level=0).sum().rename('turnover')
         cum_turnover = turnover.cumsum().rename('cum_turnover')
         vol_tov = pd.concat([volume, cum_vol, turnover, cum_turnover], axis=1)
-        res = LobTimePreprocessor.del_untrade_time(vol_tov,cut_tail=True)
-        if len(vol_tov.loc[:config.important_times['continues_auction_am_start']]) >= 1:
-            head = vol_tov.loc[:config.important_times['continues_auction_am_start']].iloc[-1]
-            head['volume'] = head['turnover'] = 0
-            head = head.rename(config.important_times['continues_auction_am_start'])
-            res = pd.concat([head.to_frame().T, res]).head(10)
+        # res = LobTimePreprocessor.del_untrade_time(vol_tov, cut_tail=True)
+        # if len(vol_tov.loc[:config.important_times['continues_auction_am_start']]) >= 1:
+        #     head = vol_tov.loc[:config.important_times['continues_auction_am_start']].iloc[-1]
+        #     head['volume'] = head['turnover'] = 0
+        #     head = head.rename(config.important_times['continues_auction_am_start'])
+        #     res = pd.concat([head.to_frame().T, res]).head(10)
         return vol_tov
 
     # testit
@@ -763,10 +864,15 @@ class OrderBook(object):
                         self.book_bid[order.price].pop(order.seq)
                         if len(self.book_bid[order.price]) == 0:
                             self.book_bid.pop(order.price)
+                            
+                        # self.pv_dict_bid[order.price]-=
+                        self._sub_pv_dict(self.pv_dict_bid,order.price,order.can_filled)
                     if order.side == OrderSideInt.ask.value:  # 卖
                         self.book_ask[order.price].pop(order.seq)
                         if len(self.book_ask[order.price]) == 0:
                             self.book_ask.pop(order.price)
+                        self._sub_pv_dict(self.pv_dict_ask,order.price,order.can_filled)
+
                 except Exception as e:
                     self._exception_cleanup()
                     raise e
@@ -818,8 +924,9 @@ class OrderBook(object):
                 continue
 
             # 连续竞价（左闭右开）
-            elif timestamp >= config.important_times['continues_auction_am_start'] and timestamp < config.important_times[
-                'continues_auction_pm_end']:
+            elif timestamp >= config.important_times['continues_auction_am_start'] and timestamp < \
+                    config.important_times[
+                        'continues_auction_pm_end']:
                 # if DEBUG: return None
                 # 开盘集合竞价尚未撮合
                 if not self.open_call_auction_matched:
@@ -836,6 +943,8 @@ class OrderBook(object):
                 self.match_continues_auction(order)
 
                 # log
+                if self.snapshot_ABtest:
+                    self.__snapshot(order.timestamp, window=self.snapshot_window)
                 self.snapshot(order.timestamp, window=self.snapshot_window)
                 self.price_history_dict[self.price_history_idx] = {'seq': seq, 'timestamp': timestamp,
                                                                    'current': self.current}
@@ -843,7 +952,8 @@ class OrderBook(object):
 
                 if seq % 10000 == 0:
                     self.check_trade_details(trade_details, last_n=50)
-
+                    if self.snapshot_ABtest:
+                        self.check_snapshot(order.timestamp,window=self.snapshot_window)
                 continue
 
             # 收盘集合竞价（左闭右开）

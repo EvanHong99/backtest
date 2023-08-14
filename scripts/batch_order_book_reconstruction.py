@@ -31,11 +31,12 @@ import os
 if __name__ == '__main__':
 
     skip = 0
-    limit = 20
+    limit = 1
     snapshot_window = 10
     ohlc = pd.read_csv(data_root + 'hs300_ohlc.csv', index_col='code')
     y, m = '2022', '06'
     for stk_name in list(code_dict.keys())[skip:limit]:
+        if stk_name in exclude: continue
         for dd in [23, 28, 29]:
             config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges = update_date(
                 y, m, str(dd))
@@ -62,7 +63,7 @@ if __name__ == '__main__':
             self.events.to_csv(detail_data_root + FILE_FMT_events.format(date, stk_name))
 
             datafeed = LobDataFeed(detail_data_root, date, stk_name=stk_name)
-            datafeed.load_basic()
+            datafeed.load_basic(detail_data_root, date, stk_name=stk_name)
             cobh_pp = LobCleanObhPreprocessor()
             cobh_pp.gen_and_save(datafeed, detail_data_root, date, stk_name=stk_name, snapshot_window=snapshot_window)
 

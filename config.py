@@ -12,7 +12,11 @@ import os
 
 from sklearn.model_selection import ParameterGrid
 
+from support import Target,update_date
+
 code_dict = {
+    # '浦发银行': '600000.XSHG',
+
     # 沪深300
     # '贵州茅台': '600519.XSHG',
     # '宁德时代': '300750.XSHE',
@@ -28,9 +32,9 @@ code_dict = {
     # 上证50
     # '贵州茅台':'600519.XSHG',
     # '中国平安': '601318.XSHG',
-    '招商银行': '600036.XSHG',
-    '兴业银行': '601166.XSHG',
-    '中信证券': '600030.XSHG',
+    # '招商银行': '600036.XSHG',
+    # '兴业银行': '601166.XSHG',
+    # '中信证券': '600030.XSHG',
     '紫金矿业': '601899.XSHG',
     '长江电力': '600900.XSHG',
     '恒瑞医药': '600276.XSHG',
@@ -86,6 +90,8 @@ code_dict = {
     # '涨停股测试': '600219.XSHG',
 }
 stk_name_dict = {v: k for k, v in code_dict.items()}
+exclude=['工商银行','中国建筑','中国石化']
+# exclude=['紫金矿业','工商银行','中国建筑','中国石化']
 
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
 data_root = root + 'data/'
@@ -102,6 +108,8 @@ FILE_FMT_vol_tov = "{}_{}_vol_tov.csv"
 FILE_FMT_model = "{}_period{}_automl.pkl"
 FILE_FMT_scaler = "{}_scaler_{}_{}.pkl"
 FILE_FMT_events = "{}_{}_events.csv"
+FILE_FMT_feature = "{}_{}_feature{}.csv"
+
 
 y = None
 m = None
@@ -115,12 +123,28 @@ ranges = None
 
 
 # prediction settings
-freq = '200ms'
-pred_n_steps = 200  # 预测40s，即200个steps
-use_n_steps = 50  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
+target = Target.mid_p_ret.name  # ret,current
+min_freq='10ms' # 最小精度，load data默认将数据asfreq至该freq
+agg_freq='1min'
+freq = agg_freq
+freq_minutes=1
+pred_n_steps = 1  # 预测1个1min
+use_n_steps = 3  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
 drop_current = False  # 是否将当前股价作为因子输入给模型
 use_level = 5
-# target = param['target']  # ret,current
+
+min_timedelta=timedelta(milliseconds=int(min_freq[:-2]))
+if agg_freq.endswith('min'):
+    agg_timedelta = timedelta(minutes=int(agg_freq[:-3]) * use_n_steps)
+    step_timedelta = timedelta(minutes=int(agg_freq[:-3]) * pred_n_steps)
+elif agg_freq.endswith('ms'):
+    agg_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * use_n_steps)
+    step_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * pred_n_steps)
+elif agg_freq.endswith('s'):
+    agg_timedelta = timedelta(seconds=int(agg_freq[:-1]) * use_n_steps)
+    step_timedelta = timedelta(seconds=int(agg_freq[:-1]) * pred_n_steps)
+else:
+    raise NotImplementedError("in config")
 
 # init
-# update_date(yy='2022', mm='06', dd='29')
+# update_date(yyyy='2022', mm='06', dd='29')

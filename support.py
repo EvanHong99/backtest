@@ -13,7 +13,7 @@ import hdf5plugin
 import numpy as np
 import pandas as pd
 from datetime import timedelta
-import config
+# import config
 
 class OrderSideInt(Enum):
     bid = 66  # 买
@@ -29,6 +29,7 @@ class OrderTypeInt(Enum):
 class Target(Enum):
     ret = 0  # ret
     mid_p_ret = 1  # 预测中间价的ret
+    vol=2
 
 class LobColTemplate(object):
     """
@@ -99,7 +100,7 @@ def get_trade_details(data_root, date, symbol):
         print(f"KeyError: Unable to open object (object '{symbol}' doesn't exist)")
         return None
 
-def update_date(yy: str, mm: str, dd: str):
+def update_date(yyyy: str, mm: str, dd: str):
     import config
 
     # global y
@@ -112,7 +113,7 @@ def update_date(yy: str, mm: str, dd: str):
     # global important_times
     # global ranges
 
-    config.y = yy
+    config.y = yyyy
     config.m = mm
     config.d = dd
 
@@ -143,6 +144,8 @@ def update_date(yy: str, mm: str, dd: str):
     return config.y,config.m,config.d,config.date,config.date1,config.start,config.end,config.important_times,config.ranges
 
 if __name__ == '__main__':
+    import config
+
     for dd in [23,28,29]:
         update_date('2022','06',str(dd))
         print(f"update to date {config.date} {config.date1}")

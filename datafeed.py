@@ -5,6 +5,7 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
+import logging
 from copy import deepcopy
 
 import numpy as np
@@ -13,7 +14,7 @@ import pandas as pd
 from config import *
 import config
 from support import *
-from preprocess import LobTimePreprocessor,LobCleanObhPreprocessor
+from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
 import pickle
 import h5py
 import hdf5plugin
@@ -25,23 +26,28 @@ class BaseDataFeed(object):
         for key, value in kwargs.items():
             self.__setattr__(key, value)
 
+
 class LobModelFeed(BaseDataFeed):
-    def __init__(self,model_root,stk_name, *args, **kwargs):
+    def __init__(self, model_root, stk_name, *args, **kwargs):
         # load models
         super().__init__(*args, **kwargs)
         self.models = []
         for num in range(4):
-            model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name,num), 'rb'))
-            print(f'best model for period {num}', model.model.estimator)
-            self.models.append(deepcopy(model))
+            try:
+                model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num), 'rb'))
+                print(f'best model for period {num}', model.model.estimator)
+                self.models.append(deepcopy(model))
+            except:
+                logging.error(model_root + FILE_FMT_model.format(stk_name, num)+" not exists")
+
 
 class LobDataFeed(BaseDataFeed):
-    def __init__(self, file_root, date: str, stk_name: str,*args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.file_root=file_root
-        self.date= date.replace('-', '')
-        self.stk_name=stk_name
+        self.file_root = None
+        self.date = None
+        self.stk_name = None
 
         self.trade_details = None
         self.order_details = None
@@ -50,7 +56,7 @@ class LobDataFeed(BaseDataFeed):
         self.order_book_history = None
         self.clean_obh = None
 
-    def get_order_details(self,data_root, date, symbol):
+    def get_order_details(self, data_root, date, symbol):
         """
         通过h5文件提取出对应symbol的数据
         :param order_f:
@@ -79,7 +85,7 @@ class LobDataFeed(BaseDataFeed):
             print('contents best of party (bop) price order')
         return order_details
 
-    def get_trade_details(self,data_root, date, symbol):
+    def get_trade_details(self, data_root, date, symbol):
         """
         通过h5文件提取出对应symbol的数据
         :param trade_f:
@@ -101,32 +107,33 @@ class LobDataFeed(BaseDataFeed):
             print(f"KeyError: Unable to open object (object '{symbol}' doesn't exist)")
             return None
 
-    def load_details(self,data_root,date,symbol):
-        self.trade_details=self.get_trade_details(data_root=data_root,date=date,symbol=symbol)
-        self.order_details=self.get_order_details(data_root=data_root,date=date,symbol=symbol)
+    def load_details(self, data_root, date, symbol):
+        self.trade_details = self.get_trade_details(data_root=data_root, date=date, symbol=symbol)
+        self.order_details = self.get_order_details(data_root=data_root, date=date, symbol=symbol)
         self.trade_details = LobTimePreprocessor.del_untrade_time(self.trade_details, cut_tail=False)
         self.trade_details = LobTimePreprocessor.add_head_tail(self.trade_details,
-                                                                    head_timestamp=config.important_times[
-                                                                        'continues_auction_am_start'],
-                                                                    tail_timestamp=config.important_times[
-                                                                        'close_call_auction_end'])
+                                                               head_timestamp=config.important_times[
+                                                                   'continues_auction_am_start'],
+                                                               tail_timestamp=config.important_times[
+                                                                   'close_call_auction_end'])
         self.order_details = LobTimePreprocessor.del_untrade_time(self.order_details, cut_tail=False)
         self.order_details = LobTimePreprocessor.add_head_tail(self.order_details,
-                                                                    head_timestamp=config.important_times[
-                                                                        'continues_auction_am_start'],
-                                                                    tail_timestamp=config.important_times[
-                                                                        'close_call_auction_end'])
+                                                               head_timestamp=config.important_times[
+                                                                   'continues_auction_am_start'],
+                                                               tail_timestamp=config.important_times[
+                                                                   'close_call_auction_end'])
 
-        return self.trade_details,self.order_details
+        return self.trade_details, self.order_details
 
-    def load_events(self):
-        self.events=pd.read_csv(self.file_root+FILE_FMT_events.format(self.date,self.stk_name),index_col=0)
-        self.events.index=pd.to_datetime(self.events.index)
+    def load_events(self, file_root, date, stk_name):
+        self.events = pd.read_csv(file_root + FILE_FMT_events.format(date, stk_name), index_col=0)
+        self.events.index = pd.to_datetime(self.events.index)
         return self.events
 
-    def load_basic(self):
+    def load_basic(self, file_root, date, stk_name):
 
-        self.order_book_history = pd.read_csv(self.file_root + FILE_FMT_order_book_history.format(self.date,self.stk_name), index_col=0,
+        self.order_book_history = pd.read_csv(file_root + FILE_FMT_order_book_history.format(date, stk_name),
+                                              index_col=0,
                                               header=0)
         self.order_book_history.columns = self.order_book_history.columns.astype(float)
         self.order_book_history.index = pd.to_datetime(self.order_book_history.index)
@@ -138,32 +145,37 @@ class LobDataFeed(BaseDataFeed):
                                                                     tail_timestamp=config.important_times[
                                                                         'close_call_auction_end'])
 
-        self.current = pd.read_csv(self.file_root + FILE_FMT_price_history.format(self.date,self.stk_name)).set_index('timestamp')[
+        self.current = \
+        pd.read_csv(file_root + FILE_FMT_price_history.format(date, stk_name)).set_index('timestamp')[
             'current'].rename('current').groupby(level=0).last()
         self.current.index = pd.to_datetime(self.current.index)
-        return self.order_book_history,self.current
+        return self.order_book_history, self.current
 
-    def load_clean_obh(self, snapshot_window=5):
-        self.clean_obh = pd.read_csv(self.file_root + FILE_FMT_clean_obh.format(self.date,self.stk_name), index_col=0)
+    def load_clean_obh(self, file_root, date, stk_name, snapshot_window=5):
+        self.clean_obh = pd.read_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name), index_col=0)
         self.clean_obh.index = pd.to_datetime(self.clean_obh.index)
 
         # 可能需要删除部分列
-        cols=[str(LobColTemplate('a',i,'p')) for i in range(snapshot_window,0,-1)]
-        cols+=[str(LobColTemplate('b',i,'p')) for i in range(1,snapshot_window+1)]
-        cols+=[str(LobColTemplate('a',i,'v')) for i in range(snapshot_window,0,-1)]
-        cols+=[str(LobColTemplate('b',i,'v')) for i in range(1,snapshot_window+1)]
+        cols = [str(LobColTemplate('a', i, 'p')) for i in range(snapshot_window, 0, -1)]
+        cols += [str(LobColTemplate('b', i, 'p')) for i in range(1, snapshot_window + 1)]
+        cols += [str(LobColTemplate('a', i, 'v')) for i in range(snapshot_window, 0, -1)]
+        cols += [str(LobColTemplate('b', i, 'v')) for i in range(1, snapshot_window + 1)]
         cols.append('current')
 
-        self.clean_obh=self.clean_obh.loc[:,cols]
+        self.clean_obh = self.clean_obh.loc[:, cols]
         return self.clean_obh
 
-    def load_vol_tov(self):
-        self.vol_tov=pd.read_csv(self.file_root+FILE_FMT_vol_tov.format(self.date,self.stk_name),index_col='timestamp')
+    def load_vol_tov(self, file_root, date, stk_name):
+        self.vol_tov = pd.read_csv(file_root + FILE_FMT_vol_tov.format(date, stk_name), index_col='timestamp')
         self.vol_tov.index = pd.to_datetime(self.vol_tov.index)
 
         return self.vol_tov
 
+    def load_feature(self, file_root, date, stk_name,num):
+        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0)
+        self.feature.index = pd.to_datetime(self.feature.index)
+
+        return self.feature
 
 if __name__ == '__main__':
     pass
-

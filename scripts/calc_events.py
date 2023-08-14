@@ -6,7 +6,6 @@
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
 
-from utils import OrderTypeInt, OrderSideInt, get_order_details, get_trade_details
 import logging
 from collections import defaultdict
 from copy import deepcopy
@@ -20,7 +19,7 @@ from sklearn.preprocessing import StandardScaler
 from sortedcontainers import SortedDict
 from tqdm import tqdm
 
-from support import OrderTypeInt, OrderSideInt
+from support import OrderTypeInt, OrderSideInt, get_order_details, get_trade_details
 from config import *
 from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
 
