@@ -8,17 +8,13 @@
 import logging
 from copy import deepcopy
 
-import numpy as np
-import pandas as pd
-
 from config import *
 import config
 from support import *
-from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
+from preprocessors.preprocess import LobTimePreprocessor
 import pickle
 import h5py
-import hdf5plugin
-
+import pandas as pd
 
 class BaseDataFeed(object):
     def __init__(self, *args, **kwargs):
@@ -151,17 +147,20 @@ class LobDataFeed(BaseDataFeed):
         self.current.index = pd.to_datetime(self.current.index)
         return self.order_book_history, self.current
 
-    def load_clean_obh(self, file_root, date, stk_name, snapshot_window=5):
+    def load_clean_obh(self, file_root, date, stk_name, snapshot_window=5,use_cols:list=None):
+
+        if use_cols is not None:
+            cols=use_cols
+        else:
+            # 删除部分high level列
+            cols = [str(LobColTemplate('a', i, 'p')) for i in range(snapshot_window, 0, -1)]
+            cols += [str(LobColTemplate('b', i, 'p')) for i in range(1, snapshot_window + 1)]
+            cols += [str(LobColTemplate('a', i, 'v')) for i in range(snapshot_window, 0, -1)]
+            cols += [str(LobColTemplate('b', i, 'v')) for i in range(1, snapshot_window + 1)]
+            cols.append('current')
+
         self.clean_obh = pd.read_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name), index_col=0)
         self.clean_obh.index = pd.to_datetime(self.clean_obh.index)
-
-        # 可能需要删除部分列
-        cols = [str(LobColTemplate('a', i, 'p')) for i in range(snapshot_window, 0, -1)]
-        cols += [str(LobColTemplate('b', i, 'p')) for i in range(1, snapshot_window + 1)]
-        cols += [str(LobColTemplate('a', i, 'v')) for i in range(snapshot_window, 0, -1)]
-        cols += [str(LobColTemplate('b', i, 'v')) for i in range(1, snapshot_window + 1)]
-        cols.append('current')
-
         self.clean_obh = self.clean_obh.loc[:, cols]
         return self.clean_obh
 
@@ -172,7 +171,8 @@ class LobDataFeed(BaseDataFeed):
         return self.vol_tov
 
     def load_feature(self, file_root, date, stk_name,num):
-        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0)
+        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=[0,1])
+        self.feature.columns=['_'.join(h) for h in self.feature.columns]
         self.feature.index = pd.to_datetime(self.feature.index)
 
         return self.feature

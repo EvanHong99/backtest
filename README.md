@@ -10,6 +10,7 @@
 |    data	    | 不要overlap                                               |    1    |
 |    data	    | optiver找因子，去极值，怎么划分区间（预测多少时间就按多少时间来切分切片），aggregate data |    1    |
 |    data     | 时间拉长（多日data），预测周期放大，0.2频率放大，多个股票一起训练，多日一起               |    1    |
+|    data     | use polar                                               |    0    |
 |    model    | 日内时间段切分，分别训练model                                       |    1    |
 |    model    | 不同model-automl                                          |    1    |
 |    model    | 防止过拟合-cv                                                |    1    |
@@ -32,7 +33,7 @@
 |  backtest   | 动态择时close                                               |    0    |
 |  backtest   | 止损止盈                                                    |    0    |
 |  others  	  | 寻找历史上和今天相似的情况，指数，构建因子、聚类，先去看是否有相近时刻，是否预测的走势是相近的         |    0    |
-|   urgent    | 1min跳的数据，每天240条数据                                       |    0    |
+|   urgent    | 1min跳的数据，每天240条数据                                       |    1    |
 |     bug     | 低价格股票重构订单簿较慢                                            |    0    |
 
 # 学到的点

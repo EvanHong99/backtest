@@ -35,9 +35,9 @@ class BaseDataPreprocessor(BasePreprocessor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.scaler = None
+        self.scaler = StandardScaler()
 
-    def std_scale(self, train, *args):
+    def std_scale(self, data, refit=True, *args):
         res = []
 
         def _meta(data: pd.DataFrame, scaler):
@@ -45,10 +45,9 @@ class BaseDataPreprocessor(BasePreprocessor):
             index = data.index
             return pd.DataFrame(scaler.transform(data), index=index, columns=cols)
 
-        self.scaler = StandardScaler()
-        self.scaler.fit(train)
-        train = _meta(train, self.scaler)
-        res.append(train)
+        if refit: self.scaler.fit(data)
+        data = _meta(data, self.scaler)
+        res.append(data)
         for other in args:
             other = _meta(other, self.scaler)
             res.append(other)
@@ -56,6 +55,7 @@ class BaseDataPreprocessor(BasePreprocessor):
 
     def sub_illegal_punctuation(self, string):
         return re.sub('\W+', '_', string)
+
 
     def save_scaler(self, dir, file_name):
         # file_name=re.sub('\W+','_', file_name)
@@ -73,6 +73,21 @@ class BaseDataPreprocessor(BasePreprocessor):
 
     @abstractmethod
     def get_stacked_Xy(self, *args, **kwargs):
+        """
+        例如5行X对应1行y
+        Parameters
+        ----------
+        args
+        kwargs
+
+        Returns
+        -------
+
+        """
+        pass
+
+    @abstractmethod
+    def align_Xy(self, *args, **kwargs):
         pass
 
 
@@ -147,7 +162,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         # features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
 
         agg_rows = int(agg_timedelta / min_timedelta)
-        step_rows = int(step_timedelta / min_timedelta)
+        step_rows = int(pred_timedelta / min_timedelta)
         features = features.rolling(agg_rows, min_periods=agg_rows, step=step_rows, closed='left', center=False).agg(
             [np.mean, np.std, np.median])
         return features
@@ -155,6 +170,20 @@ class AggDataPreprocessor(BaseDataPreprocessor):
     @classmethod
     def get_flattened_Xy(cls, alldatas, num, target, pred_n_steps, use_n_steps, drop_current):
         pass
+
+    def align_Xy(self, X,y, pred_timedelta):
+        start_time = X.index
+        tar_time = start_time + pred_timedelta
+
+        available_time = [True if t in y.index else False for t in tar_time]
+        start_time = start_time[available_time]
+        tar_time = tar_time[available_time]
+
+        X = X.loc[start_time]
+        y = y.loc[tar_time]
+
+        return X,y
+
 
 
 class LobCleanObhPreprocessor(BasePreprocessor):
@@ -306,7 +335,7 @@ class LobTimePreprocessor(BasePreprocessor):
     @staticmethod
     def change_freq(df, freq):
         """deprecated"""
-        logging.warning("change_freq deprecated", FutureWarning)
+        logging.warning("change_freq deprecated", DeprecationWarning)
         return df.asfreq(freq='10ms', method='ffill').asfreq(freq=freq)
 
     @staticmethod

@@ -7,7 +7,6 @@
 # @Description:
 
 import logging
-from collections import defaultdict
 from copy import deepcopy
 from typing import Union
 
@@ -15,11 +14,10 @@ import numpy as np
 import pandas as pd
 from sortedcontainers import SortedDict
 from tqdm import tqdm
-from datetime import timedelta
 
 from config import *
 import config
-from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
+from preprocessors.preprocess import LobCleanObhPreprocessor
 from support import OrderTypeInt, OrderSideInt
 
 
@@ -681,7 +679,7 @@ class OrderBook(object):
         -------
 
         """
-        # logging.warning(str(self.__snapshot)+" is deprecated",FutureWarning)
+        # logging.warning(str(self.__snapshot)+" is deprecated",DeprecationWarning)
         window_ask = min(len(self.book_ask), window)
         window_bid = min(len(self.book_bid), window)
         p_v = {k: self.sum_volume(v) for k, v in self.book_bid.items()[-window_bid:]}
@@ -694,7 +692,7 @@ class OrderBook(object):
         盘口快照，并存储于history
         window: window档盘口数据
         """
-        # logging.warning(str(self.__snapshot)+" is deprecated",FutureWarning)
+        # logging.warning(str(self.__snapshot)+" is deprecated",DeprecationWarning)
         window_bid = min(len(self.pv_dict_bid.keys()), window)
         window_ask = min(len(self.pv_dict_ask.keys()), window)
         p_v = {k: v for k, v in self.pv_dict_bid.items()[-window_bid:]}

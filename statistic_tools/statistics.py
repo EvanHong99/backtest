@@ -5,10 +5,9 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
-
+import pandas as pd
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score
-
-from utils import *
+import numpy as np
 
 
 class BaseStatistics(object):
@@ -19,11 +18,14 @@ class BaseStatistics(object):
 
 
 class LobStatistics(BaseStatistics):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def report(self, manager):
         pass  # Generate report based on records from observer
 
     @staticmethod
-    def stat_pred_error(y_true, y_pred, name='stat'):
+    def stat_pred_error(y_true, y_pred, name='stat')->pd.Series:
         return pd.Series({'baseline_mae': y_true.abs().mean(),
                           'baseline_rmse': np.sqrt(np.square(y_true).sum()),
                           'mae': mean_absolute_error(y_true, y_pred),
@@ -74,6 +76,7 @@ class LobStatistics(BaseStatistics):
 
     @classmethod
     def stat_pred_performance(cls):
+        # todo
         all_stats = pd.DataFrame()
         all_stats_winrate = pd.DataFrame()
         for num, (X_test, y_test, model) in enumerate(zip(self.Xs, self.ys, self.models)):

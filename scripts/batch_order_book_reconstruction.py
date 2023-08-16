@@ -6,32 +6,16 @@
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description: 生成obh，即列为价格，行为该价格下的委托数
 
-import logging
-from collections import defaultdict
-from copy import deepcopy
-from datetime import timedelta
-
-import h5py
-import hdf5plugin
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sortedcontainers import SortedDict
-from tqdm import tqdm
-
 from support import *
 # from config import *
-import config
-from preprocess import LobTimePreprocessor, LobCleanObhPreprocessor
 from calc_events import calc_events
-from datafeed import LobDataFeed
+from datafeeds.datafeed import LobDataFeed
 from order_book_reconstruction import *
-import os
 
 if __name__ == '__main__':
 
     skip = 0
-    limit = 1
+    limit = 2
     snapshot_window = 10
     ohlc = pd.read_csv(data_root + 'hs300_ohlc.csv', index_col='code')
     y, m = '2022', '06'

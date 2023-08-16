@@ -7,12 +7,7 @@
 # @Description:
 from datetime import timedelta
 
-import pandas as pd
-import os
-
-from sklearn.model_selection import ParameterGrid
-
-from support import Target,update_date
+from support import Target
 
 code_dict = {
     # '浦发银行': '600000.XSHG',
@@ -30,26 +25,26 @@ code_dict = {
     # '东方财富': '300059.XSHE',
 
     # 上证50
-    # '贵州茅台':'600519.XSHG',
-    # '中国平安': '601318.XSHG',
+    '贵州茅台':'600519.XSHG',
+    '中国平安': '601318.XSHG',
     # '招商银行': '600036.XSHG',
     # '兴业银行': '601166.XSHG',
     # '中信证券': '600030.XSHG',
-    '紫金矿业': '601899.XSHG',
-    '长江电力': '600900.XSHG',
-    '恒瑞医药': '600276.XSHG',
-    '万华化学': '600309.XSHG',
-    '伊利股份': '600887.XSHG',
-    '隆基绿能': '601012.XSHG',
-    '工商银行': '601398.XSHG',
-    '药明康德': '603259.XSHG',
-    '中国建筑': '601668.XSHG',
-    '中国中免': '601888.XSHG',
-    '中国石化': '600028.XSHG',
-    '山西汾酒': '600809.XSHG',
-    '农业银行': '601288.XSHG',
-    '三一重工': '600031.XSHG',
-    '保利发展': '600048.XSHG',
+    # '紫金矿业': '601899.XSHG',
+    # '长江电力': '600900.XSHG',
+    # '恒瑞医药': '600276.XSHG',
+    # '万华化学': '600309.XSHG',
+    # '伊利股份': '600887.XSHG',
+    # '隆基绿能': '601012.XSHG',
+    # '工商银行': '601398.XSHG',
+    # '药明康德': '603259.XSHG',
+    # '中国建筑': '601668.XSHG',
+    # '中国中免': '601888.XSHG',
+    # '中国石化': '600028.XSHG',
+    # '山西汾酒': '600809.XSHG',
+    # '农业银行': '601288.XSHG',
+    # '三一重工': '600031.XSHG',
+    # '保利发展': '600048.XSHG', # <-
     '中国联通': '600050.XSHG',
     '国电南瑞': '600406.XSHG',
     '通威股份': '600438.XSHG',
@@ -90,7 +85,7 @@ code_dict = {
     # '涨停股测试': '600219.XSHG',
 }
 stk_name_dict = {v: k for k, v in code_dict.items()}
-exclude=['工商银行','中国建筑','中国石化']
+exclude=[]
 # exclude=['紫金矿业','工商银行','中国建筑','中国石化']
 
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
@@ -105,8 +100,8 @@ FILE_FMT_price_history = "{}_{}_price_history.csv"
 FILE_FMT_clean_obh = "{}_{}_clean_obh.csv"  # 默认买卖各5档
 FILE_FMT_my_trade_details = "{}_{}_my_trade_details.csv"
 FILE_FMT_vol_tov = "{}_{}_vol_tov.csv"
-FILE_FMT_model = "{}_period{}_automl.pkl"
-FILE_FMT_scaler = "{}_scaler_{}_{}.pkl"
+FILE_FMT_model = "{}_period{}.pkl" # "{[stkname|'general']}_period{period}_automl.pkl"
+FILE_FMT_scaler = "{}_scaler_{}_{}.pkl" # "{stkname}_scaler_{period}_{Any}.pkl"
 FILE_FMT_events = "{}_{}_events.csv"
 FILE_FMT_feature = "{}_{}_feature{}.csv"
 
@@ -136,13 +131,13 @@ use_level = 5
 min_timedelta=timedelta(milliseconds=int(min_freq[:-2]))
 if agg_freq.endswith('min'):
     agg_timedelta = timedelta(minutes=int(agg_freq[:-3]) * use_n_steps)
-    step_timedelta = timedelta(minutes=int(agg_freq[:-3]) * pred_n_steps)
+    pred_timedelta = timedelta(minutes=int(agg_freq[:-3]) * pred_n_steps)
 elif agg_freq.endswith('ms'):
     agg_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * use_n_steps)
-    step_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * pred_n_steps)
+    pred_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * pred_n_steps)
 elif agg_freq.endswith('s'):
     agg_timedelta = timedelta(seconds=int(agg_freq[:-1]) * use_n_steps)
-    step_timedelta = timedelta(seconds=int(agg_freq[:-1]) * pred_n_steps)
+    pred_timedelta = timedelta(seconds=int(agg_freq[:-1]) * pred_n_steps)
 else:
     raise NotImplementedError("in config")
 

@@ -7,18 +7,17 @@
 # @Description: 计算features并保存
 
 
-from backtest.backtester import LobBackTester
-from broker import Broker
-from config import *
-import config
-from datafeed import LobDataFeed
-from observer import LobObserver
-from statistics import LobStatistics
-from strategies import LobStrategy
-from preprocess import AggDataPreprocessor
-from support import Target, update_date
 import os
 
+from backtester import LobBackTester
+from brokers.broker import Broker
+from config import *
+import config
+from datafeeds.datafeed import LobDataFeed
+from observers.observer import LobObserver
+from preprocessors.preprocess import AggDataPreprocessor
+from strategies import LobStrategy
+from support import Target, update_date
 
 if __name__ == '__main__':
     f_list=[]
@@ -36,17 +35,18 @@ if __name__ == '__main__':
 
 
     for yyyy,mm,dd,stk_name in f_list:
+        if stk_name not in list(code_dict.keys()): continue
         update_date(yyyy,mm, dd)
+        print('start',stk_name,yyyy,mm,dd)
         datafeed = LobDataFeed()
         strategy = LobStrategy(max_close_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps))
         broker = Broker(cash=1e6, commission=1e-3)
         observer = LobObserver()
-        statistics = LobStatistics()
 
         self = LobBackTester(model_root=model_root,
                              file_root=detail_data_root,
-                             dates=[23, 28, 29],  # todo 确认一致性是否有bug
-                             stk_names=["贵州茅台"],
+                             dates=[],  # todo 确认一致性是否有bug
+                             stk_names=[],
                              levels=5,
                              target=Target.ret.name,
                              freq=freq,
@@ -57,14 +57,14 @@ if __name__ == '__main__':
                              strategy=strategy,
                              broker=broker,
                              observer=observer,
-                             statistics=statistics,
+                             statistics=None,
                              )
         self.stk_name = stk_name
 
         self.alldata[config.date][stk_name] = self.load_data(file_root=self.file_root, date=config.date,
                                                              stk_name=stk_name)  # random freq
         self.alldatas[config.date][stk_name] = self.preprocess_data(
-            self.alldata[config.date][stk_name],level=use_level,to_freq=min_freq)  # random freq
+            self.alldata[config.date][stk_name],level=use_level,to_freq=min_freq)  # min_freq
 
         dp = AggDataPreprocessor()
         # to agg_freq
@@ -74,3 +74,4 @@ if __name__ == '__main__':
 
         for i,feature in enumerate(self.alldatas[config.date][stk_name]):
             feature.to_csv(detail_data_root + FILE_FMT_feature.format(config.date,stk_name,str(i)))
+        print('finish',stk_name,yyyy,mm,dd)

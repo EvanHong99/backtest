@@ -5,7 +5,7 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
-
+import re
 from enum import Enum
 
 import h5py
@@ -13,6 +13,7 @@ import hdf5plugin
 import numpy as np
 import pandas as pd
 from datetime import timedelta
+import pickle
 # import config
 
 class OrderSideInt(Enum):
@@ -142,6 +143,13 @@ def update_date(yyyy: str, mm: str, dd: str):
                pd.to_datetime(f'{config.date1} 14:57:00.000') - timedelta(milliseconds=10))]
     # print(f"in function update to date {config.date} {config.date1}")
     return config.y,config.m,config.d,config.date,config.date1,config.start,config.end,config.important_times,config.ranges
+
+def save_model(dir, filename, model):
+    with open(dir + filename, 'wb') as f:
+        pickle.dump(model, f, pickle.HIGHEST_PROTOCOL)
+
+def extract_model_name(model)->str:
+    return re.findall('\w*', str(type(model)).split('.')[-1])[0]
 
 if __name__ == '__main__':
     import config

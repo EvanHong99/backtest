@@ -7,22 +7,21 @@
 # @Description:
 from __future__ import annotations
 
-import datetime
+import logging
 import warnings
 from abc import abstractmethod
 from collections import defaultdict
 from typing import List, Union
 
-import pandas as pd
-
-from broker import Broker
+from brokers.broker import Broker
 from config import *
 import config
 from support import *
-from datafeed import LobDataFeed, LobModelFeed
-from observer import LobObserver
-from preprocess import LobFeatureEngineering, LobTimePreprocessor, ShiftDataPreprocessor, AggDataPreprocessor
-from statistics import LobStatistics
+from datafeeds.datafeed import LobDataFeed, LobModelFeed
+from observers.observer import LobObserver
+from preprocessors.preprocess import LobFeatureEngineering, LobTimePreprocessor, ShiftDataPreprocessor, \
+    AggDataPreprocessor
+from statistic_tools.statistics import LobStatistics
 from strategies import LobStrategy
 
 
@@ -76,7 +75,7 @@ class LobBackTester(BaseTester):
     def __init__(self,
                  model_root: str,
                  file_root: str,
-                 dates: List[str|int],
+                 dates: List[str | int],
                  stk_names: List[str],
                  levels: int,
                  target: str,
@@ -135,15 +134,17 @@ class LobBackTester(BaseTester):
         :return: pd.DataFrame,(clean_obh_dict+vol_tov), random freq
         """
         self.datafeed = LobDataFeed()
-        self.clean_obh = self.datafeed.load_clean_obh(file_root=file_root, date=date, stk_name=stk_name,snapshot_window=self.levels)
+        self.clean_obh = self.datafeed.load_clean_obh(file_root=file_root, date=date, stk_name=stk_name,
+                                                      snapshot_window=self.levels)
         self.vol_tov = self.datafeed.load_vol_tov(file_root=file_root, date=date, stk_name=stk_name)
         self.events = self.datafeed.load_events(file_root=file_root, date=date, stk_name=stk_name)
         # self.trade_details,self.order_details=self.datafeed.load_details(data_root,date,code_dict[stk_name])
         data = pd.concat([self.clean_obh, self.vol_tov, self.events], axis=1).ffill()
         return data
 
-    def calc_features(self, df, level,to_freq=None):
+    def calc_features(self, df, level, to_freq=None):
         # todo: 时间不连续、不规整，过于稀疏，归一化细节
+        # todo use polar
         fe = LobFeatureEngineering()
         feature = fe.generate_cross_section(df, level=level)
         feature = pd.concat([df, feature], axis=1)
@@ -155,7 +156,7 @@ class LobBackTester(BaseTester):
         return feature
 
     # testit
-    def preprocess_data(self, data,level,to_freq=None) -> list:
+    def preprocess_data(self, data, level, to_freq=None) -> list:
         """
         将数据划分为4份，每份一小时
         :param data: 10ms
@@ -168,7 +169,7 @@ class LobBackTester(BaseTester):
         alldatas = [ltp.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
                                       tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in
                     zip(alldatas, config.ranges)]
-        self.features = [self.calc_features(data, level=level,to_freq=to_freq) for data in
+        self.features = [self.calc_features(data, level=level, to_freq=to_freq) for data in
                          alldatas]  # 尚未agg
         self.features = [ltp.add_head_tail(feature, head_timestamp=pd.to_datetime(s),
                                            tail_timestamp=pd.to_datetime(e)) for feature, (s, e) in
@@ -182,10 +183,10 @@ class LobBackTester(BaseTester):
         # todo 添加动量features
         ...
 
-        self.features = [feature.fillna(0) for feature in self.features ]
+        self.features = [feature.fillna(0) for feature in self.features]
         return self.features
 
-    def scale_data(self, alldatas, stk_name,data_pp):
+    def scale_data(self, alldatas, stk_name, data_pp):
         """
 
         :param alldatas:
@@ -207,28 +208,45 @@ class LobBackTester(BaseTester):
 
         return Xs
 
-    def match_y(self, Xs, features, used_timedelta,
-                pred_timedelta, target: str):
+    def match_y(self, Xs: list, features: list, used_timedelta,
+                pred_timedelta, target: str, frolling=False):
         """
+        fixme: 需要完善该接口
 
-        :param X:
-        :param features:
-        :param used_timedelta: 使用多久的数据
-        :param pred_timedelta: 预测多少秒以后的target
-        :param target: class 'Target', ret, mid_p_ret
-        :return:
+        Parameters
+        ----------
+        Xs: list
+            一天中4个小时的数据
+        features: list
+            一天中4个小时的特征
+        used_timedelta
+            使用多久的数据
+        pred_timedelta
+            预测多少秒以后的target
+        target
+            class 'Target', ret, mid_p_ret
+        frolling: default False
+            原feature是否forward rolling，即frolling使用的是[t-n,t)的数据进行agg。
+
+        Returns
+        -------
+
         """
+        logging.warning("deprecated", DeprecationWarning)
+        logging.warning("请确保正确使用frolling", FutureWarning)
+
         _Xs = []
         _ys = []
         for X, feature in zip(Xs, features):
 
             start_time = X.index
-            tar_time = start_time + used_timedelta + pred_timedelta
+            tar_time = start_time + pred_timedelta
+            if not frolling:
+                tar_time += used_timedelta
             # 波动率型
-            if target==Target.vol.name:
+            if target == Target.vol.name:
                 ...
                 continue
-
 
             # return 类型的target
             if target == Target.ret.name:
@@ -249,8 +267,6 @@ class LobBackTester(BaseTester):
             _Xs.append(X)
             _ys.append(y)
 
-
-
         return _Xs, _ys
 
     def transform_data(self, alldatas, stk_name):
@@ -259,8 +275,8 @@ class LobBackTester(BaseTester):
         :param alldatas:
         :return:
         """
-        warnings.warn(f"{self.transform_data} will be deprecated", FutureWarning)
-        # raise FutureWarning(f"{self.transform_data} will be deprecated")
+        warnings.warn(f"{self.transform_data} will be deprecated", DeprecationWarning)
+        # raise DeprecationWarning(f"{self.transform_data} will be deprecated")
         Xs = []
         ys = []
         for num in range(len(alldatas)):
@@ -299,19 +315,22 @@ class LobBackTester(BaseTester):
                                                               stk_name=stk_name)  # random freq
 
                 self.alldatas[date][stk_name] = self.preprocess_data(
-                    self.alldata[date][stk_name],level=use_level,to_freq=min_freq)  # min_freq, 10ms
+                    self.alldata[date][stk_name], level=use_level, to_freq=min_freq)  # min_freq, 10ms
 
-                dp=AggDataPreprocessor()
+                dp = AggDataPreprocessor()
                 # agg_freq=1min
-                self.alldatas[date][stk_name]=[dp.agg_features(feature,agg_freq=agg_freq,pred_n_steps=pred_n_steps,use_n_steps=use_n_steps) for feature in self.alldatas[date][stk_name]]
+                self.alldatas[date][stk_name] = [
+                    dp.agg_features(feature, agg_freq=agg_freq, pred_n_steps=pred_n_steps, use_n_steps=use_n_steps) for
+                    feature in self.alldatas[date][stk_name]]
 
                 # self.Xs, self.ys = self.transform_data(self.alldatas[date][stk_name],stk_name)
 
-                self.Xs = self.scale_data(self.alldatas[date][stk_name], stk_name,data_pp=dp)
+                self.Xs = self.scale_data(self.alldatas[date][stk_name], stk_name, data_pp=dp)
                 self.Xs, self.ys = self.match_y(self.Xs, self.alldatas[date][stk_name],
                                                 used_timedelta=timedelta(minutes=int(freq[:-3]) * use_n_steps),
                                                 pred_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps),
-                                                target=Target.mid_p_ret.name)
+                                                target=Target.mid_p_ret.name,
+                                                frolling=False)
 
                 y_preds = pd.Series()
                 for num, (X_test, y_test, model) in enumerate(zip(self.Xs, self.ys, self.models)):
