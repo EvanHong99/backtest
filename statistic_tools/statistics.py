@@ -51,15 +51,16 @@ class LobStatistics(BaseStatistics):
         win_times = (np.logical_and(signals != 0, ret.values > 0)).sum()
         fair_times = (np.logical_and(signals != 0, ret.values == 0)).sum()
         loss_times = (np.logical_and(signals != 0, ret.values < 0)).sum()
+        assert eff_opera==win_times+fair_times+loss_times
 
         desc['eff_opera'] = eff_opera
         desc['win_times'] = win_times
         desc['fair_times'] = fair_times
         desc['loss_times'] = loss_times
-        desc['eff_opera_ratio'] = eff_opera / len(signals)
-        desc['win_rate'] = win_times / (eff_opera + 1)  # 会偏小，但是如果effective operations越多，那么影响越小
-        desc['fair_rate'] = fair_times / (eff_opera + 1)  # 会偏小，但是如果effective operations越多，那么影响越小
-        desc['loss_rate'] = loss_times / (eff_opera + 1)  # 会偏小，但是如果effective operations越多，那么影响越小
+        desc['eff_opera_ratio'] = eff_opera / max(len(signals),1)
+        desc['win_rate'] = win_times / max(eff_opera , 1)
+        desc['fair_rate'] = fair_times / max(eff_opera , 1)
+        desc['loss_rate'] = loss_times / max(eff_opera , 1)
 
         desc['use_counterpart'] = str(counterpart)
         if params:

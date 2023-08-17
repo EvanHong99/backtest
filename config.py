@@ -100,8 +100,8 @@ FILE_FMT_price_history = "{}_{}_price_history.csv"
 FILE_FMT_clean_obh = "{}_{}_clean_obh.csv"  # 默认买卖各5档
 FILE_FMT_my_trade_details = "{}_{}_my_trade_details.csv"
 FILE_FMT_vol_tov = "{}_{}_vol_tov.csv"
-FILE_FMT_model = "{}_period{}.pkl" # "{[stkname|'general']}_period{period}_automl.pkl"
-FILE_FMT_scaler = "{}_scaler_{}_{}.pkl" # "{stkname}_scaler_{period}_{Any}.pkl"
+FILE_FMT_model = "{}_period{}_{}.pkl" # "{[stkname|'general']}_period{period}_{extract_model_name(model)}.pkl"
+FILE_FMT_scaler = "{}_scaler_{}_{}.pkl" # "{stkname}_scaler_{period}_{Any:default:'_'}.pkl"
 FILE_FMT_events = "{}_{}_events.csv"
 FILE_FMT_feature = "{}_{}_feature{}.csv"
 

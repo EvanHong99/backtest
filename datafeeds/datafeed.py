@@ -7,6 +7,8 @@
 # @Description:
 import logging
 from copy import deepcopy
+import flaml
+import flaml.automl.state
 
 from config import *
 import config
@@ -24,18 +26,27 @@ class BaseDataFeed(object):
 
 
 class LobModelFeed(BaseDataFeed):
-    def __init__(self, model_root, stk_name, *args, **kwargs):
+    def __init__(self, model_root, stk_name,model_class, *args, **kwargs):
         # load models
         super().__init__(*args, **kwargs)
         self.models = []
         for num in range(4):
+            pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num, model_class), 'rb'))
             try:
-                model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num), 'rb'))
+                model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num,model_class), 'rb'))
                 print(f'best model for period {num}', model.model.estimator)
                 self.models.append(deepcopy(model))
-            except:
-                logging.error(model_root + FILE_FMT_model.format(stk_name, num)+" not exists")
+            except Exception as e:
+                logging.error(model_root + FILE_FMT_model.format(stk_name, num,model_class)+" not exists")
+                print(str(e.__context__))
 
+    @staticmethod
+    def load_model(model_root, stk_name,num,model_class,verbose=False):
+        try:
+            model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num,model_class), 'rb'))
+            if verbose:print(f'best model for period {num}', model.model.estimator)
+        except:
+            logging.error(model_root + FILE_FMT_model.format(stk_name, num,model_class) + " not exists")
 
 class LobDataFeed(BaseDataFeed):
     def __init__(self, *args, **kwargs):

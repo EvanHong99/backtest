@@ -14,27 +14,26 @@ import os
 import numpy as np
 import pandas as pd
 from flaml import AutoML
-from sklearn.linear_model import LassoCV,RidgeCV
+from sklearn.linear_model import LassoCV, RidgeCV
 from sklearn.utils import shuffle
 
 from config import *
 import config
 from datafeeds.datafeed import LobDataFeed
-from support import update_date, LobColTemplate,save_model,extract_model_name
+from support import update_date, LobColTemplate, save_model, extract_model_name
 from preprocessors.preprocess import AggDataPreprocessor, LobTimePreprocessor, BaseDataPreprocessor
 from statistic_tools.statistics import LobStatistics
 
-
-
 if __name__ == '__main__':
+    # todo 将dict格式改为{date:{stkname:data}}
 
     # 读取已处理数据文件名从而确认有多少数据可用于后续计算
-    f_dict = defaultdict(list)
+    f_dict = defaultdict(list)  # {stk_name:(yyyy, mm, dd)}
     for r, d, f in os.walk(detail_data_root):
         print(f)
         for filename in f:
             if filename in ['placeholder']: continue
-            if 'feature' not in filename:continue
+            if 'feature' not in filename: continue
             parts = filename.split('_')
             yyyy = parts[0][:4]
             mm = parts[0][4:6]
@@ -51,10 +50,10 @@ if __name__ == '__main__':
 
     # 读数据
     data_dict = defaultdict(lambda: defaultdict(list))  # data_dict={date:{stkname:[data0,data1,data2,data3]}
-    tar_dict = defaultdict(dict)  # data_dict={date:{stkname:tar_data}
+    tar_dict = defaultdict(dict)  # data_dict={date:{stkname:tar_data}}
     datafeed = LobDataFeed()
-    for stk_name, features in f_dict.items():
-        for yyyy, mm, dd in features:
+    for stk_name, date_tuples in f_dict.items():
+        for yyyy, mm, dd in date_tuples:
             try:
                 for num in range(4):
                     update_date(yyyy, mm, dd)
@@ -104,9 +103,9 @@ if __name__ == '__main__':
     #  todo:该阶段（train scaler and model）不需要test的数据，但在之后完整的backtest时仍旧需要用到该段代码
     X_test_dict = defaultdict(lambda: defaultdict(pd.DataFrame))
     y_test_dict = defaultdict(lambda: defaultdict(pd.Series))
-    for ymd, stk_data in list(data_dict.items())[train_len: ]:
+    for ymd, stk_data in list(data_dict.items())[train_len:]:
         for stk_name, features in stk_data.items():
-            for num,feature in enumerate(features):
+            for num, feature in enumerate(features):
                 X, y = dp.align_Xy(feature, tar_dict[ymd][stk_name], pred_timedelta=pred_timedelta)  # 最重要的是对齐X y
                 X_test_dict[stk_name][num] = pd.concat([X_test_dict[stk_name][num], X], axis=0)
                 y_test_dict[stk_name][num] = pd.concat([y_test_dict[stk_name][num], y], axis=0)
@@ -120,7 +119,7 @@ if __name__ == '__main__':
         for num in range(4):
             dp = AggDataPreprocessor()
             X_train_dict[stk_name][num] = dp.std_scale(X_train_dict[stk_name][num], refit=True)[0]
-            X_test_dict[stk_name][num]=dp.std_scale(X_test_dict[stk_name][num],refit=False)[0]
+            X_test_dict[stk_name][num] = dp.std_scale(X_test_dict[stk_name][num], refit=False)[0]
             dp.save_scaler(scaler_root, FILE_FMT_scaler.format(stk_name, num, '_'))
 
     # gather different stk data todo: 不同股票不同模型
@@ -136,14 +135,13 @@ if __name__ == '__main__':
             all_y_test[num] = pd.concat([all_y_test[num], y_test_dict[stk_name][num]], axis=0)
 
     # train & save model
-    stat=pd.DataFrame()
-    all_y_pred=pd.Series()
+    stat = pd.DataFrame()
+    all_y_pred = pd.Series()
     models = {}
-    lob_stat=LobStatistics()
+    lob_stat = LobStatistics()
     for num in range(4):
-        X_train,y_train=shuffle(all_X_train[num],all_y_train[num])
-        X_test,y_test=shuffle(all_X_test[num],all_y_test[num])
-
+        X_train, y_train = shuffle(all_X_train[num], all_y_train[num])
+        X_test, y_test = shuffle(all_X_test[num], all_y_test[num])
 
         # # linear
         # model = RidgeCV(cv=5, gcv_mode='auto')
@@ -165,15 +163,14 @@ if __name__ == '__main__':
 
         # predict
         y_pred1 = model.predict(X_train)
-        stat=pd.concat([stat,lob_stat.stat_pred_error(y_train,y_pred1,name=f'train_stat_{num}')],axis=1)
+        stat = pd.concat([stat, lob_stat.stat_pred_error(y_train, y_pred1, name=f'train_stat_{num}')], axis=1)
         y_pred = model.predict(X_test)
-        stat=pd.concat([stat,lob_stat.stat_pred_error(y_test,y_pred,name=f'test_stat_{num}')],axis=1)
-        all_y_pred=pd.concat([all_y_pred,pd.Series(y_pred)],axis=0,ignore_index=True)
+        stat = pd.concat([stat, lob_stat.stat_pred_error(y_test, y_pred, name=f'test_stat_{num}')], axis=1)
+        all_y_pred = pd.concat([all_y_pred, pd.Series(y_pred)], axis=0, ignore_index=True)
 
         # save
-        save_model(model_root, FILE_FMT_model.format('general', num), model)
+        save_model(model_root, FILE_FMT_model.format('general', num, extract_model_name(model)), model)
 
     print(stat)
-    stat.to_csv(res_root+f"stat_{extract_model_name(model)}.csv")
-    all_y_pred.to_csv(res_root+f"all_y_pred_{extract_model_name(model)}.csv")
-
+    stat.to_csv(res_root + f"stat_{extract_model_name(model)}.csv")
+    all_y_pred.to_csv(res_root + f"all_y_pred_{extract_model_name(model)}.csv")

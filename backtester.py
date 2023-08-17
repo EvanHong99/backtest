@@ -8,10 +8,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 from abc import abstractmethod
 from collections import defaultdict
+from copy import deepcopy
 from typing import List, Union
+
+from sklearn.utils import shuffle
+import flaml
 
 from brokers.broker import Broker
 from config import *
@@ -120,8 +125,8 @@ class LobBackTester(BaseTester):
         self.alldatas = defaultdict(dict)  # {dates:{stk_name:[data1,data2,...]}}
         self.all_signals = defaultdict(pd.DataFrame)
 
-    def load_models(self, model_root, stk_name):
-        model_loader = LobModelFeed(model_root=model_root, stk_name=stk_name)
+    def load_models(self, model_root, stk_name,model_class):
+        model_loader = LobModelFeed(model_root=model_root, stk_name=stk_name,model_class=model_class)
         self.models = model_loader.models
         return self.models
 
@@ -299,6 +304,127 @@ class LobBackTester(BaseTester):
 
         return Xs, ys
 
+    def run_bt(self):
+        """
+        仅回测，不处理数据，不训练scalers、模型
+
+        Notes
+        -----
+        明确进行回测的是哪些股票，哪些日期
+        """
+        self.models = self.load_models(self.model_root, 'general',model_class='automl')# 默认会加载4个时间段的models
+
+        # 明确进行回测的是哪些股票，哪些日期
+        f_dict = defaultdict(list)  # {stk_name:(yyyy, mm, dd)}
+        for date in self.dates:
+            parts = str(pd.to_datetime(date).date()).split('-')
+            yyyy = parts[0]
+            mm = parts[1]
+            dd = parts[2]
+            for stk_name in self.stk_names:
+                self.stk_name = stk_name
+                f_dict[stk_name].append((yyyy, mm, dd))
+        f_dict = {k: sorted(list(set(v))) for k, v in f_dict.items()}# 去重
+
+        # 读数据
+        data_dict = defaultdict(lambda: defaultdict(list)) # data_dict={date:{stkname:[data0,data1,data2,data3]}
+        tar_dict = defaultdict(dict)  # data_dict={date:{stkname:tar_data}}
+        datafeed = LobDataFeed()
+        for stk_name, date_tuples in f_dict.items():
+            for yyyy, mm, dd in date_tuples:
+                update_date(yyyy, mm, dd)
+                try:
+                    for num in range(4):
+                        feature = datafeed.load_feature(detail_data_root, config.date, stk_name, num)
+                        data_dict[config.date][stk_name].append(feature.dropna(how='all'))
+                except FileNotFoundError as e:
+                    print("missing feature", stk_name, yyyy, mm, dd)
+                    continue
+
+                # target
+                tar = None
+                self.alldata[config.date][stk_name] = datafeed.load_clean_obh(detail_data_root, config.date, stk_name,
+                                               snapshot_window=use_level,
+                                               use_cols=[str(LobColTemplate('a', 1, 'p')),
+                                                         str(LobColTemplate('a', 1, 'v')),
+                                                         str(LobColTemplate('b', 1, 'p')),
+                                                         str(LobColTemplate('b', 1, 'v')),
+                                                         str(LobColTemplate().current)])
+                temp = self.alldata[config.date][stk_name].asfreq(freq=min_freq, method='ffill')
+                shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
+                # todo 以一段时间的平均ret作为target
+                if config.target == Target.mid_p_ret.name:
+                    tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
+                    tar = np.log(tar / tar.shift(shift_rows))  # log ret
+                elif config.target == Target.ret.name:
+                    tar = temp[LobColTemplate().current]
+                    tar = np.log(tar / tar.shift(shift_rows))  # log ret
+                elif config.target == Target.vol.name:
+                    # 波动率
+                    ...
+                tar = LobTimePreprocessor().del_untrade_time(tar, cut_tail=True)  # 不能忘
+                tar_dict[config.date][stk_name] = tar
+                print("load", detail_data_root, stk_name, config.date)
+
+        dp = AggDataPreprocessor()
+        # X_test_dict = defaultdict(lambda: defaultdict(pd.DataFrame))
+        # y_test_dict = defaultdict(lambda: defaultdict(pd.Series))
+        for date, stk_data in list(data_dict.items()):
+            for stk_name, features in stk_data.items():
+                self.Xs, self.ys = [], []
+                for num, feature in enumerate(features):
+                    X, y = dp.align_Xy(feature, tar_dict[date][stk_name],
+                                       pred_timedelta=pred_timedelta)  # 最重要的是对齐X y
+                    # X_test_dict[stk_name][num] = pd.concat([X_test_dict[stk_name][num], X], axis=0)
+                    # y_test_dict[stk_name][num] = pd.concat([y_test_dict[stk_name][num], y], axis=0)
+
+                    # scale X data
+                    dp.load_scaler(scaler_root,FILE_FMT_scaler.format(stk_name,num,'_'))
+                    X, = dp.std_scale(X, refit=False)
+                    self.Xs.append(X)
+                    self.ys.append(y)
+
+                y_preds = pd.Series()
+                for num, (X_test, y_test, model) in enumerate(zip(self.Xs, self.ys, self.models)):
+                    y_pred = model.predict(X_test)
+                    y_pred = pd.Series(y_pred, index=y_test.index,
+                                       name=f'pred_{self.target}_{self.pred_n_steps * 0.2}s').sort_index()
+                    y_preds = pd.concat([y_preds, y_pred], axis=0)
+                y_preds = y_preds.sort_index()
+                # 单个股票的signals concat到所有signals上
+                signals = self.strategy.generate_signals(y_preds, stk_name=stk_name, threshold=0.001, drift=0)
+                self.all_signals[date] = pd.concat([self.all_signals[date], signals], axis=0)
+        print(self.all_signals)
+
+        # start trade
+        # :param signals: dict, {date:all_signals for all stks}
+        # :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
+        self.broker.load_data(self.alldata)
+        # todo 需要增加多股票、多日期回测
+        revenue_dict, ret_dict, aligned_signals_dict=None,None,None
+        for date in list(data_dict.keys()):
+            for stk_name in self.stk_names:
+                signals = self.all_signals[date].sort_index()
+
+                # todo 逐个signal进行模拟
+                # for signal in signals: #(timestamp,stk_name,side,type,price_limit,volume)
+                #     self.broker.execute(signal)
+
+                # 批量交易
+                revenue_dict, ret_dict, aligned_signals_dict = self.broker.batch_execute(signals, use_dates=None, use_stk_names=None)
+
+                stat_revenue = self.statistics.stat_winrate(revenue_dict[date][stk_name],
+                                                            aligned_signals_dict[date][stk_name]['side_open'],
+                                                            counterpart=True, params=None)
+                stat_ret = self.statistics.stat_winrate(ret_dict[date][stk_name],
+                                                        aligned_signals_dict[date][stk_name]['side_open'],
+                                                        counterpart=True, params=None)
+
+                stat_revenue.to_csv(res_root + f"{date}_{stk_name}_stat_revenue.csv")
+                stat_ret.to_csv(res_root + f"{date}_{stk_name}_stat_ret.csv")
+
+        return revenue_dict, ret_dict, aligned_signals_dict
+
     def run(self):
         """
 
@@ -308,8 +434,8 @@ class LobBackTester(BaseTester):
         for date in self.dates:
             for stk_name in self.stk_names:
                 self.stk_name = stk_name
-
-                self.models = self.load_models(self.model_root, stk_name)
+                # 默认会加载4个时间段的models
+                self.models = self.load_models(self.model_root, 'general', model_class='automl')  # 默认会加载4个时间段的models
 
                 self.alldata[date][stk_name] = self.load_data(file_root=self.file_root, date=date,
                                                               stk_name=stk_name)  # random freq
@@ -349,6 +475,7 @@ class LobBackTester(BaseTester):
         # start trade
         # :param signals: dict, {date:all_signals for all stks}
         # :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
+        revenue_dict, ret_dict, aligned_signals_dict=None,None,None
         self.broker.load_data(self.alldata)
         # todo 需要增加多股票、多日期回测
         for date in self.dates:
@@ -373,3 +500,34 @@ class LobBackTester(BaseTester):
                 stat_ret.to_csv(res_root + f"{date}_{stk_name}_stat_ret.csv")
 
         return revenue_dict, ret_dict, aligned_signals_dict
+
+
+if __name__ == '__main__':
+    stk_names = ["贵州茅台","中信证券"]
+    update_date('2022','06','29')
+    datafeed = LobDataFeed()
+    strategy = LobStrategy(max_close_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps))
+    broker = Broker(cash=1e6,commission=1e-3)
+    observer = LobObserver()
+    statistics = LobStatistics()
+
+    bt=LobBackTester(model_root=model_root,
+                     file_root=detail_data_root,
+                     dates=['2022-06-29'], # todo 确认一致性是否有bug
+                     stk_names=stk_names,
+                     levels=5,
+                     target=Target.ret.name,
+                     freq=freq,
+                     pred_n_steps=pred_n_steps,
+                     use_n_steps=use_n_steps,
+                     drop_current=drop_current,
+                     datafeed=datafeed,
+                     strategy=strategy,
+                     broker=broker,
+                     observer=observer,
+                     statistics=statistics,
+                     )
+
+    bt.run_bt() #
+
+    print()

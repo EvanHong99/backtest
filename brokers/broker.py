@@ -5,6 +5,7 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
+import logging
 from typing import Dict, List, Union
 
 from collections import defaultdict
@@ -245,6 +246,8 @@ class Broker(BaseBroker):
         :return:
         """
         self.clean_obh_dict = clean_obh_dict
+        if (self.clean_obh_dict is None) or (self.clean_obh_dict == 0):
+            logging.warning("self.clean_obh_dict has no data", UserWarning)
 
     def execute(self, signal):
         """
@@ -271,73 +274,94 @@ class Broker(BaseBroker):
             else:
                 raise NotImplementedError("side not implemented")
 
-    def batch_execute(self, signals:pd.DataFrame, date, stk_names:List[str]):
+    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str):
+        """
+        批量处理信号，但仅针对单日单只个股信号
+        Parameters
+        ----------
+        _signals : pd.DataFrame
+            单日单只个股信号
+        date
+        stk_name
+
+        Returns
+        -------
+
+        """
+        # 只有side才是决定是否开仓的真正信号，此处的open close用于标识开平仓时间
+        _open_signals = _signals.loc[_signals['action'] == 'open']
+        _close_signals = _signals.loc[_signals['action'] == 'close']
+        _aligned_signals = pd.merge(_open_signals, _close_signals, how='inner', left_on='seq', right_on='seq',
+                                    suffixes=('_open', '_close'))
+
+        _aligned_signals_long = _aligned_signals.loc[_aligned_signals['side_open'] == 1]
+        _aligned_signals_short = _aligned_signals.loc[_aligned_signals['side_open'] == -1]
+        _aligned_signals_hold = _aligned_signals.loc[_aligned_signals['side_open'] == 0]
+
+        temp = self.clean_obh_dict[date][stk_name].asfreq(freq=min_freq, method='ffill')
+        b1p = temp[str(LobColTemplate('b', 1, 'p'))]
+        b1v = temp[str(LobColTemplate('b', 1, 'v'))]
+        a1p = temp[str(LobColTemplate('a', 1, 'p'))]
+        a1v = temp[str(LobColTemplate('a', 1, 'v'))]
+        current = temp[str(LobColTemplate().current)]
+
+        # 计算收益，如果为正则代表收益为正
+        long_open_time = _aligned_signals_long['timestamp_open'].values
+        short_open_time = _aligned_signals_short['timestamp_open'].values
+        hold_open_time = _aligned_signals_hold['timestamp_open'].values
+        long_close_time = _aligned_signals_long['timestamp_close'].values
+        short_close_time = _aligned_signals_short['timestamp_close'].values
+        hold_close_time = _aligned_signals_hold['timestamp_close'].values
+
+        long_revenue = b1p.loc[long_close_time].values - a1p.loc[long_open_time].values
+        long_ret = b1p.loc[long_close_time].values / a1p.loc[long_open_time].values - 1
+        short_revenue = b1p.loc[short_open_time].values - a1p.loc[short_close_time].values
+        short_ret = b1p.loc[short_open_time].values / a1p.loc[short_close_time].values - 1
+
+        long_revenue = pd.Series(long_revenue, index=long_open_time)
+        long_ret = pd.Series(long_ret, index=long_open_time)
+        short_revenue = pd.Series(short_revenue, index=short_open_time)
+        short_ret = pd.Series(short_ret, index=short_open_time)
+        hold_revenue = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
+        hold_ret = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
+
+        revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0)
+        ret = pd.concat([long_ret, short_ret, hold_ret], axis=0)
+        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold], axis=0)
+
+        return revenue, ret, _aligned_signals
+
+    def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None):
         """
         批量执行指令，无法画出净值曲线
         todo commission
         :param signals:
-        :param date:
-        :param stk_names:
+        :param use_dates:
+        :param use_stk_names:
         :return:
         """
+        if len(signals) == 0: raise ValueError("has no signals")
         revenue_dict = defaultdict(dict)  # dict of dict
         ret_dict = defaultdict(dict)  # dict of dict
         aligned_signals_dict = defaultdict(dict)  # dict of dict
-        sig_dates = signals['timestamp'].apply(lambda x: str(x.date()))
-        sig_stk_names = signals['stk_name'].unique()
-        # for sig_date in sorted(sig_dates.unique().tolist()):
-        #     for sig_stk_name in sig_stk_names:
-        for sig_date in [date]:
-            for sig_stk_name in stk_names:
+        sig_dates = sorted(signals['timestamp'].apply(lambda x: str(x.date()).replace('-','')).unique())
+        sig_stk_names = sorted(signals['stk_name'].unique())
+
+        for sig_date in sig_dates:
+            for sig_stk_name in sig_stk_names:
+                if use_dates is not None and sig_date not in use_dates: continue
+                if use_stk_names is not None and sig_stk_name not in use_stk_names: continue
+                print(f"broker processes {sig_date} {sig_stk_name}")
+
                 _signals = signals.loc[np.logical_and(sig_date == sig_dates, signals['stk_name'] == sig_stk_name)]
 
-                # 只有side才是决定是否开仓的真正信号，此处的open close用于标识开平仓时间
-                _open_signals = _signals.loc[_signals['action'] == 'open']
-                _close_signals = _signals.loc[_signals['action'] == 'close']
-                _aligned_signals = pd.merge(_open_signals, _close_signals, how='inner', left_on='seq', right_on='seq',
-                                            suffixes=('_open', '_close'))
-
-                _aligned_signals_long = _aligned_signals.loc[_aligned_signals['side_open'] == 1]
-                _aligned_signals_short = _aligned_signals.loc[_aligned_signals['side_open'] == -1]
-                _aligned_signals_hold = _aligned_signals.loc[_aligned_signals['side_open'] == 0]
-
-                temp = self.clean_obh_dict[sig_date][sig_stk_name]
-                b1p = temp[str(LobColTemplate('b', 1, 'p'))]
-                b1v = temp[str(LobColTemplate('b', 1, 'v'))]
-                a1p = temp[str(LobColTemplate('a', 1, 'p'))]
-                a1v = temp[str(LobColTemplate('a', 1, 'v'))]
-                current = temp[str(LobColTemplate().current)]
-
-                # 计算收益，如果为正则代表收益为正
-                long_open_time=_aligned_signals_long['timestamp_open'].values
-                short_open_time=_aligned_signals_short['timestamp_open'].values
-                hold_open_time=_aligned_signals_hold['timestamp_open'].values
-                long_close_time=_aligned_signals_long['timestamp_close'].values
-                short_close_time=_aligned_signals_short['timestamp_close'].values
-                hold_close_time=_aligned_signals_hold['timestamp_close'].values
-                
-                long_revenue = b1p.loc[long_close_time].values - a1p.loc[long_open_time].values
-                long_ret = b1p.loc[long_close_time].values / a1p.loc[long_open_time].values - 1
-                short_revenue = b1p.loc[short_open_time].values - a1p.loc[short_close_time].values
-                short_ret = b1p.loc[short_open_time].values / a1p.loc[short_close_time].values - 1
-
-                long_revenue=pd.Series(long_revenue,index=long_open_time)
-                long_ret=pd.Series(long_ret,index=long_open_time)
-                short_revenue=pd.Series(short_revenue,index=short_open_time)
-                short_ret=pd.Series(short_ret,index=short_open_time)
-                hold_revenue = pd.Series(np.zeros_like(hold_open_time,dtype=float),index=hold_open_time)
-                hold_ret = pd.Series(np.zeros_like(hold_open_time,dtype=float),index=hold_open_time)
-
-                revenue = pd.concat([long_revenue, short_revenue,hold_revenue], axis=0)
-                ret = pd.concat([long_ret, short_ret,hold_ret], axis=0)
-                _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short,_aligned_signals_hold], axis=0)
+                revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name)
 
                 revenue_dict[sig_date][sig_stk_name] = revenue
                 ret_dict[sig_date][sig_stk_name] = ret
                 aligned_signals_dict[sig_date][sig_stk_name] = _aligned_signals
 
         return revenue_dict, ret_dict, aligned_signals_dict
-
 
     ############## 旧代码 deprecated ################
     # def update_netvalue(self, date):
