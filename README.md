@@ -11,13 +11,12 @@
 |    model    | 日内时间段切分，分别训练scaler/model                                                            |    1    |
 |    model    | 不同model-automl                                                                      |    1    |
 |    model    | 防止过拟合-cv                                                                            |    1    |
-|    model    | mljar适配                                                                             |    1    |
+|    model    | mljar适配                                                                             |   -1    |
 |    model    | flaml适配                                                                             |    1    |
 |    model    | autogluon适配                                                                         |    1    |
 |    model    | rnn                                                                                 |    1    |
 | 	statistics | statistics胜率，盈亏比（每次盈亏）                                                              |    1    |
 | 	statistics | 因子IC,ICRank                                                                         |    1    |
-| 	statistics | mse的bug?                                                                            | 1，没有bug |
 | statistics  | 多个股票上statistics平均表现                                                                 |    1    |
 |  strategy   | truncate小预测信号                                                                       |    1    |
 | backtest 	  | 多只股票的通用模式                                                                           |    1    |
