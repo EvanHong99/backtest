@@ -5,7 +5,7 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description: 生成obh，即列为价格，行为该价格下的委托数
-
+import config
 from support import *
 # from config import *
 from calc_events import calc_events
@@ -15,12 +15,14 @@ from order_book_reconstruction import *
 if __name__ == '__main__':
 
     skip = 0
-    limit = 2
+    limit = 50
     snapshot_window = 10
     ohlc = pd.read_csv(data_root + 'hs300_ohlc.csv', index_col='code')
+    load_status()
     y, m = '2022', '06'
     for stk_name in list(code_dict.keys())[skip:limit]:
         if stk_name in exclude: continue
+        if stk_name in config.complete_status['orderbooks']:continue
         for dd in [23, 28, 29]:
             config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges = update_date(
                 y, m, str(dd))
@@ -51,6 +53,8 @@ if __name__ == '__main__':
             cobh_pp = LobCleanObhPreprocessor()
             cobh_pp.gen_and_save(datafeed, detail_data_root, date, stk_name=stk_name, snapshot_window=snapshot_window)
 
-            print(f"finish {stk_name}")
+            print(f"finish {stk_name} {date}")
 
             # pd.concat([trade_details['price'].reset_index()['price'].rename('ground_truth'),self.my_trade_details['price'].rename('recnstr')],axis=1).plot(title=stk_names).get_figure().savefig(res_root+f'current_{stk_names}.png',dpi=1200,bbox_inches='tight')
+        config.complete_status['orderbooks'].append(stk_name)
+        save_status()

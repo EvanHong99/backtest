@@ -5,6 +5,8 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
+
+
 import re
 from enum import Enum
 
@@ -14,7 +16,9 @@ import numpy as np
 import pandas as pd
 from datetime import timedelta
 import pickle
-# import config
+import json
+import logging
+# import config # 在函数中import
 
 class OrderSideInt(Enum):
     bid = 66  # 买
@@ -148,13 +152,35 @@ def save_model(dir, filename, model):
     with open(dir + filename, 'wb') as f:
         pickle.dump(model, f, pickle.HIGHEST_PROTOCOL)
 
+
 def extract_model_name(model)->str:
     return re.findall('\w*', str(type(model)).split('.')[-1])[0]
 
+def __check_obedience(d:dict):
+    try:
+        assert len(set(d['models'])-set(d['features']))==0
+        assert len(set(d['features'])-set(d['orderbooks']))==0
+    except AssertionError as e:
+        logging.warning(f"set(d['models'])-set(d['features']) {set(d['models'])-set(d['features'])}")
+        logging.warning(f"set(d['features'])-set(d['orderbooks']) {set(d['features']) - set(d['orderbooks'])}")
+
+
+def load_status():
+    import config
+    with open(config.root+'backtest/complete_status.json', 'r', encoding='utf8') as fr:
+        config.complete_status = json.load(fr)
+    print("load_status",config.complete_status)
+    __check_obedience(config.complete_status)
+
+def save_status():
+    import config
+    with open(config.root+'backtest/complete_status.json', 'w', encoding='utf8') as fw:
+        json.dump(config.complete_status, fw, ensure_ascii=False)
+    print("save_status",config.complete_status)
+    __check_obedience(config.complete_status)
+
+
 if __name__ == '__main__':
     import config
-
-    for dd in [23,28,29]:
-        update_date('2022','06',str(dd))
-        print(f"update to date {config.date} {config.date1}")
-
+    load_status()
+    print(config.complete_status)

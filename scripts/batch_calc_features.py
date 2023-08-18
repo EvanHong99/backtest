@@ -6,72 +6,86 @@
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description: 计算features并保存
 
-
 import os
+import sys
+from collections import defaultdict
 
+path = os.path.join(os.path.dirname(__file__), os.pardir)
+sys.path.append(path)
+
+import config
 from backtester import LobBackTester
 from brokers.broker import Broker
 from config import *
-import config
 from datafeeds.datafeed import LobDataFeed
 from observers.observer import LobObserver
 from preprocessors.preprocess import AggDataPreprocessor
 from strategies import LobStrategy
-from support import Target, update_date
+from support import *
 
 if __name__ == '__main__':
-    f_list=[]
-    for r,d,f in os.walk(detail_data_root):
+    load_status()
+
+    f_list = defaultdict(list)
+    for r, d, f in os.walk(detail_data_root):
         print(f)
         for filename in f:
-            if filename=='placeholder':continue
-            parts=filename.split('_')
-            yyyy=parts[0][:4]
-            mm = parts[0][4:6]
-            dd = parts[0][-2:]
-            stk_name=parts[1]
-            f_list.append((yyyy,mm,dd,stk_name))
-    f_list=sorted(list(set(f_list)))
+            parts = filename.split('_')
+            _date = parts[0]
+            stk_name = parts[1]
+            if filename == 'placeholder': continue
+            if 'clean_obh' not in filename:continue
+            if ('feature' in filename) and (stk_name in config.complete_status['features']):
+                continue
+            f_list[stk_name].append(_date)
+            f_list[stk_name] = sorted(list(set(f_list[stk_name])))
 
-
-    for yyyy,mm,dd,stk_name in f_list:
+    for stk_name in f_list.keys():
         if stk_name not in list(code_dict.keys()): continue
-        update_date(yyyy,mm, dd)
-        print('start',stk_name,yyyy,mm,dd)
-        datafeed = LobDataFeed()
-        strategy = LobStrategy(max_close_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps))
-        broker = Broker(cash=1e6, commission=1e-3)
-        observer = LobObserver()
+        if stk_name in config.exclude: continue
+        if stk_name in config.complete_status['features']:continue
+        for _date in f_list[stk_name]:
+            yyyy = _date[:4]
+            mm = _date[4:6]
+            dd = _date[-2:]
+            update_date(yyyy, mm, dd)
+            print('start', stk_name, yyyy, mm, dd)
+            datafeed = LobDataFeed()
+            # strategy = LobStrategy(max_close_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps))
+            broker = Broker(cash=1e6, commission=1e-3)
+            observer = LobObserver()
 
-        self = LobBackTester(model_root=model_root,
-                             file_root=detail_data_root,
-                             dates=[],  # todo 确认一致性是否有bug
-                             stk_names=[],
-                             levels=5,
-                             target=Target.ret.name,
-                             freq=freq,
-                             pred_n_steps=pred_n_steps,
-                             use_n_steps=use_n_steps,
-                             drop_current=drop_current,
-                             datafeed=datafeed,
-                             strategy=strategy,
-                             broker=broker,
-                             observer=observer,
-                             statistics=None,
-                             )
-        self.stk_name = stk_name
+            self = LobBackTester(model_root=model_root,
+                                 file_root=detail_data_root,
+                                 dates=[],  # todo 确认一致性是否有bug
+                                 stk_names=[],
+                                 levels=5,
+                                 target=Target.ret.name,
+                                 freq=freq,
+                                 pred_n_steps=pred_n_steps,
+                                 use_n_steps=use_n_steps,
+                                 drop_current=drop_current,
+                                 datafeed=datafeed,
+                                 strategy=None,
+                                 broker=broker,
+                                 observer=observer,
+                                 statistics=None,
+                                 )
+            self.stk_name = stk_name
 
-        self.alldata[config.date][stk_name] = self.load_data(file_root=self.file_root, date=config.date,
-                                                             stk_name=stk_name)  # random freq
-        self.alldatas[config.date][stk_name] = self.preprocess_data(
-            self.alldata[config.date][stk_name],level=use_level,to_freq=min_freq)  # min_freq
+            self.alldata[config.date][stk_name] = self.load_data(file_root=self.file_root, date=config.date,
+                                                                 stk_name=stk_name)  # random freq
+            self.alldatas[config.date][stk_name] = self.preprocess_data(
+                self.alldata[config.date][stk_name], level=use_level, to_freq=min_freq)  # random freq
 
-        dp = AggDataPreprocessor()
-        # to agg_freq
-        self.alldatas[config.date][stk_name] = [
-            dp.agg_features(feature, agg_freq=agg_freq, pred_n_steps=pred_n_steps, use_n_steps=use_n_steps) for feature
-            in self.alldatas[config.date][stk_name]]
+            dp = AggDataPreprocessor()
+            # to agg_freq
+            self.alldatas[config.date][stk_name] = [
+                dp.agg_features(feature, agg_freq=agg_freq, pred_n_steps=pred_n_steps, use_n_steps=use_n_steps) for feature
+                in self.alldatas[config.date][stk_name]]
 
-        for i,feature in enumerate(self.alldatas[config.date][stk_name]):
-            feature.to_csv(detail_data_root + FILE_FMT_feature.format(config.date,stk_name,str(i)))
-        print('finish',stk_name,yyyy,mm,dd)
+            for i, feature in enumerate(self.alldatas[config.date][stk_name]):
+                feature.to_csv(detail_data_root + FILE_FMT_feature.format(config.date, stk_name, str(i)))
+            print('finish', stk_name, yyyy, mm, dd)
+        config.complete_status['features'].append(stk_name)
+        save_status()
