@@ -1,10 +1,12 @@
 # -*- coding=utf-8 -*-
-# @File     : batch_train_model.py
-# @Time     : 2023/8/11 16:33
+# @File     : batch_train_model_lobster.py
+# @Time     : 2023/8/21 10:34
 # @Author   : EvanHong
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
-# @Description: 训练模型，并保存相关的scaler和model
+# @Description:
+
+
 import os
 import sys
 
@@ -34,15 +36,10 @@ from preprocessors.preprocess import AggDataPreprocessor, LobTimePreprocessor, B
 from statistic_tools.statistics import LobStatistics
 
 
-def _rolling_rv(series: pd.Series):
-    # assert (series>=0).values.all() # 已在外部代码保证这一点，出于效率考虑，暂时注释该行
-    return np.sqrt(np.sum(series.dropna()))
-
-
 if __name__ == '__main__':
 
     skip = 0
-    limit = 10
+    limit = 5
     load_status()
     # 读取已处理数据文件名从而确认有多少数据可用于后续计算
     f_dict = defaultdict(list)
@@ -57,16 +54,16 @@ if __name__ == '__main__':
             mm = parts[0][4:6]
             dd = parts[0][-2:]
             stk_name = parts[1]
+            if stk_name not in code_dict.keys():continue
             f_dict[stk_name].append((yyyy, mm, dd))
     # 去重并保留数据覆盖3天的股票，为了前两天scaler去scale第三天的数据
     f_dict = {k: sorted(list(set(v))) for k, v in list(f_dict.items())[skip:limit]}
-    f_dict1 = deepcopy(f_dict)
-    for k, v in f_dict1.items():
-        if len(v) < 3:
-            f_dict.pop(k)
-            logging.warning(f"incompletely constructed data {k}")
-            if k in ['AAPL', 'AMZN', 'GOOG', 'INTC', 'MSFT']: continue
-            # assert k not in config.complete_status['scalers']
+    # f_dict1 = deepcopy(f_dict)
+    # for k, v in f_dict1.items():
+    #     if len(v) < 3:
+    #         f_dict.pop(k)
+    #         logging.warning(f"incompletely constructed data {k}")
+    #         assert k not in config.complete_status['scalers']
     print(f"waiting list {list(f_dict.keys())}")
 
     # 读数据
@@ -90,7 +87,7 @@ if __name__ == '__main__':
             temp = datafeed.load_clean_obh(detail_data_root, config.date, stk_name, snapshot_window=use_level,
                                            use_cols=[str(LobColTemplate('a', 1, 'p')),
                                                      str(LobColTemplate('b', 1, 'p'))])
-            temp = temp.groupby(level=0).last().resample('10ms').last().sort_index().ffill()
+            temp = temp.groupby(level=0).last().resample('10ms').last().sort_index().ffill().bfill()
             shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
             # todo 以一段时间的平均ret作为target
             if config.target == Target.mid_p_ret.name:
@@ -101,27 +98,7 @@ if __name__ == '__main__':
                 tar = np.log(tar / tar.shift(shift_rows))  # log ret
             elif config.target == Target.vol.name:
                 # 波动率
-
-                # 计算t时刻后， (t+pred_delta-rolling_rows:t+pred_delta+rolling_rows]窗口内的表现
-                # ratio = 5
-                # rolling_rows = int(shift_rows / ratio)
-                # tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
-                # tar = np.log(tar / tar.shift(1))  # log ret
-                # tar1 = tar * tar
-                # tar = tar1.shift(-rolling_rows).reset_index()[[0]].rolling(2 * rolling_rows,
-                #                                                            min_periods=2 * rolling_rows, center=False,
-                #                                                            step=shift_rows).apply(_rolling_rv)
-
-                # 计算(t+1,t+pred_delta]
-                ratio = 1
-                rolling_rows = int(shift_rows / ratio)
-                tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
-                tar = np.log(tar / tar.shift(1))  # log ret
-                tar1 = tar * tar
-                tar = tar1.shift(-rolling_rows).reset_index()[[0]].rolling(rolling_rows,
-                                                                           min_periods=rolling_rows, center=False,
-                                                                           step=shift_rows).apply(_rolling_rv)
-                tar = pd.Series(tar.values.flatten(), index=tar1.iloc[tar.index].index)
+                ...
             tar = LobTimePreprocessor().del_untrade_time(tar, cut_tail=True)  # 不能忘
             tar_dict[config.date][stk_name] = tar.rename(config.target)
             print("load", detail_data_root, stk_name, config.date)
@@ -161,10 +138,15 @@ if __name__ == '__main__':
         for num in range(4):
             dp = AggDataPreprocessor()
             X_train_dict[stk_name][num] = dp.std_scale(X_train_dict[stk_name][num], refit=True)[0]
-            X_test_dict[stk_name][num] = dp.std_scale(X_test_dict[stk_name][num], refit=False)[0]
             dp.save_scaler(scaler_root, FILE_FMT_scaler.format(stk_name, num, '_'))
         config.complete_status['scalers'].append(stk_name)
-        config.complete_status['scalers'] = list(set(config.complete_status['scalers']))
+        save_status()
+    for stk_name in X_test_dict.keys():
+        for num in range(4):
+            dp = AggDataPreprocessor()
+            X_test_dict[stk_name][num] = dp.std_scale(X_test_dict[stk_name][num], refit=True)[0]
+            dp.save_scaler(scaler_root, FILE_FMT_scaler.format(stk_name, num, '_'))
+        config.complete_status['scalers'].append(stk_name)
         save_status()
 
     # gather different stk data todo: 不同股票不同模型
@@ -192,11 +174,6 @@ if __name__ == '__main__':
     for num in range(4):
         X_train, y_train = shuffle(all_X_train[num], all_y_train[num])
         X_test, y_test = shuffle(all_X_test[num], all_y_test[num])
-
-        nan_idx = np.logical_or(X_train.isna().any(axis=1).values, y_train.isna().values)
-        X_train, y_train = X_train.loc[~nan_idx], y_train.loc[~nan_idx]
-        nan_idx = np.logical_or(X_test.isna().any(axis=1).values, y_test.isna().values)
-        X_test, y_test = X_test.loc[~nan_idx], y_test.loc[~nan_idx]
 
         # # linear
         # model = RidgeCV(cv=5, gcv_mode='auto')
@@ -245,13 +222,9 @@ if __name__ == '__main__':
             all_y_pred = pd.concat([all_y_pred, pd.Series(y_pred)], axis=0, ignore_index=True)
         if USE_AUTOGLUON:
             y_pred1 = model.predict(_train_data)
-            _train_stat=lob_stat.stat_pred_error(y_train, y_pred1, name=f'autogluon_train_stat_{num}')
-            stat = pd.concat([stat,_train_stat ], axis=1)
-            print('train stat',_train_stat)
+            stat = pd.concat([stat, lob_stat.stat_pred_error(y_train, y_pred1, name=f'autogluon_train_stat_{num}')], axis=1)
             y_pred = model.predict(_test_data)
-            _test_stat=lob_stat.stat_pred_error(y_test, y_pred, name=f'autogluon_test_stat_{num}')
-            stat = pd.concat([stat, _test_stat], axis=1)
-            print('test stat',_test_stat)
+            stat = pd.concat([stat, lob_stat.stat_pred_error(y_test, y_pred, name=f'autogluon_test_stat_{num}')], axis=1)
             all_y_pred = pd.concat([all_y_pred, pd.Series(y_pred)], axis=0, ignore_index=True)
             eval = model.evaluate(_test_data, silent=True)
             lboard = model.leaderboard(_test_data, silent=True)
@@ -261,10 +234,9 @@ if __name__ == '__main__':
             print(results)
 
         # save
-        mname = f'general_{config.target}'
-        save_model(model_root, FILE_FMT_model.format(mname, num, extract_model_name(model)), model)
+        save_model(model_root, FILE_FMT_model.format('lobster_general', num,extract_model_name(model)), model)
 
     print(stat)
     print(all_y_pred)
-    stat.to_csv(res_root + f"stat_{extract_model_name(model)}_{config.target}.csv")
-    all_y_pred.to_csv(res_root + f"all_y_pred_{extract_model_name(model)}_{config.target}.csv")
+    stat.to_csv(res_root + f"lobster_stat_{extract_model_name(model)}.csv")
+    all_y_pred.to_csv(res_root + f"lobster_all_y_pred_{extract_model_name(model)}.csv")

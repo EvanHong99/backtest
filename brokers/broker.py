@@ -375,7 +375,6 @@ class Broker(BaseBroker):
         2022/6/29 9:35	-1	77	0	100	中信证券	close	0
         2022/6/29 9:36	-1	77	0	100	贵州茅台	close	1
         2022/6/29 9:36	1	77	0	100	中信证券	close	1
-
         """
         if len(signals) == 0: raise ValueError("has no signals")
         revenue_dict = defaultdict(dict)  # dict of dict

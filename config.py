@@ -83,6 +83,13 @@ code_dict = {
     # '海通证券': '600837.XSHG',
     # '沪深300ETF': '510300.XSHG',
     # '涨停股测试': '600219.XSHG',
+
+    # lobster
+    # "AAPL":"AAPL",
+    # "AMZN": "AMZN",
+    # "GOOG": "GOOG",
+    # "INTC": "INTC",
+    # "MSFT": "MSFT",
 }
 complete_status={}
 stk_name_dict = {v: k for k, v in code_dict.items()}
@@ -121,7 +128,7 @@ ranges = None
 
 
 # prediction settings
-target = Target.mid_p_ret.name  # ret,current
+target = Target.vol.name  # ret,current
 min_freq='10ms' # 最小精度，load data默认将数据asfreq至该freq
 agg_freq='1min'
 freq = agg_freq

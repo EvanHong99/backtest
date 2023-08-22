@@ -18,6 +18,8 @@ from datetime import timedelta
 import pickle
 import json
 import logging
+
+
 # import config # 在函数中import
 
 class OrderSideInt(Enum):
@@ -31,28 +33,47 @@ class OrderTypeInt(Enum):
     best_own = 85  # 本⽅最优
     bop = 85  # 本⽅最优
 
+
 class Target(Enum):
-    ret = 0  # ret
+    """
+    Attributes
+    ----------
+    ret:
+        current ret
+    mid_p_ret:
+        中间价的ret
+    vol:
+        middle price realized volatility
+    wap_ret:
+        wap ret
+    wap_vol:
+        wap realized volatility
+    """
+    ret = 0  # current ret
     mid_p_ret = 1  # 预测中间价的ret
-    vol=2
+    vol = 2  # middle price realized volatility
+    wap_ret = 3
+    wap_vol = 4
+
 
 class LobColTemplate(object):
     """
     column template
     """
 
-    def __init__(self, side: str=None, level: int=None, target: str=None):
+    def __init__(self, side: str = None, level: int = None, target: str = None):
         self.side = side
         self.level = level
         self.target = target
-        self.current='current'
-        self.mid_price='mid_price'
+        self.current = 'current'
+        self.mid_price = 'mid_price'
 
     def __str__(self):
         return f"{self.side}{self.level}_{self.target}"
 
     def __repr__(self):
         return self.__str__()
+
 
 def get_order_details(data_root, date, symbol):
     """
@@ -105,6 +126,7 @@ def get_trade_details(data_root, date, symbol):
         print(f"KeyError: Unable to open object (object '{symbol}' doesn't exist)")
         return None
 
+
 def update_date(yyyy: str, mm: str, dd: str):
     import config
 
@@ -138,49 +160,57 @@ def update_date(yyyy: str, mm: str, dd: str):
         'close_call_auction_end': pd.to_datetime(f'{config.date1} 15:00:00.000000'), }
 
     config.ranges = [(pd.to_datetime(f'{config.date1} 09:30:00.000'),
-               pd.to_datetime(f'{config.date1} 10:30:00.000') - timedelta(milliseconds=10)),
-              (pd.to_datetime(f'{config.date1} 10:30:00.000'),
-               pd.to_datetime(f'{config.date1} 11:30:00.000') - timedelta(milliseconds=10)),
-              (pd.to_datetime(f'{config.date1} 13:00:00.000'),
-               pd.to_datetime(f'{config.date1} 14:00:00.000') - timedelta(milliseconds=10)),
-              (pd.to_datetime(f'{config.date1} 14:00:00.000'),
-               pd.to_datetime(f'{config.date1} 14:57:00.000') - timedelta(milliseconds=10))]
+                      pd.to_datetime(f'{config.date1} 10:30:00.000') - timedelta(milliseconds=10)),
+                     (pd.to_datetime(f'{config.date1} 10:30:00.000'),
+                      pd.to_datetime(f'{config.date1} 11:30:00.000') - timedelta(milliseconds=10)),
+                     (pd.to_datetime(f'{config.date1} 13:00:00.000'),
+                      pd.to_datetime(f'{config.date1} 14:00:00.000') - timedelta(milliseconds=10)),
+                     (pd.to_datetime(f'{config.date1} 14:00:00.000'),
+                      pd.to_datetime(f'{config.date1} 14:57:00.000') - timedelta(milliseconds=10))]
     # print(f"in function update to date {config.date} {config.date1}")
-    return config.y,config.m,config.d,config.date,config.date1,config.start,config.end,config.important_times,config.ranges
+    return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
+
 
 def save_model(dir, filename, model):
     with open(dir + filename, 'wb') as f:
         pickle.dump(model, f, pickle.HIGHEST_PROTOCOL)
 
 
-def extract_model_name(model)->str:
+def extract_model_name(model) -> str:
     return re.findall('\w*', str(type(model)).split('.')[-1])[0]
 
-def __check_obedience(d:dict):
+
+def __check_obedience(d: dict):
     try:
-        assert len(set(d['models'])-set(d['features']))==0
-        assert len(set(d['features'])-set(d['orderbooks']))==0
+        assert len(set(d['models']) - set(d['features'])) == 0
+        assert len(set(d['features']) - set(d['orderbooks'])) == 0
     except AssertionError as e:
-        logging.warning(f"set(d['models'])-set(d['features']) {set(d['models'])-set(d['features'])}")
+        logging.warning(f"set(d['models'])-set(d['features']) {set(d['models']) - set(d['features'])}")
         logging.warning(f"set(d['features'])-set(d['orderbooks']) {set(d['features']) - set(d['orderbooks'])}")
 
 
 def load_status():
     import config
-    with open(config.root+'backtest/complete_status.json', 'r', encoding='utf8') as fr:
+    with open(config.root + 'backtest/complete_status.json', 'r', encoding='utf8') as fr:
         config.complete_status = json.load(fr)
-    print("load_status",config.complete_status)
+    print("load_status", config.complete_status)
     __check_obedience(config.complete_status)
+
 
 def save_status():
     import config
-    with open(config.root+'backtest/complete_status.json', 'w', encoding='utf8') as fw:
+    with open(config.root + 'backtest/complete_status.json', 'w', encoding='utf8') as fw:
         json.dump(config.complete_status, fw, ensure_ascii=False)
-    print("save_status",config.complete_status)
+    print("save_status", config.complete_status)
     __check_obedience(config.complete_status)
+
+
+def realized_volatility(series):
+    return np.sqrt(np.sum(series ** 2))
 
 
 if __name__ == '__main__':
     import config
+
     load_status()
     print(config.complete_status)
