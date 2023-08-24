@@ -242,7 +242,6 @@ class Broker(BaseBroker):
         """
 
         :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
-        :param signals: dict, {date:all_signals}
         :return:
         """
         self.clean_obh_dict = clean_obh_dict
@@ -335,10 +334,47 @@ class Broker(BaseBroker):
         """
         批量执行指令，无法画出净值曲线
         todo commission
-        :param signals:
-        :param use_dates:
-        :param use_stk_names:
-        :return:
+        Note
+        ----
+        需要提前使用Broker.load_data()函数买卖量价信息历史（至少1档）存于Broker.clean_obh_dict <{date:{stk_name:ret <pd.DataFrame>}}>
+
+        Parameters
+        ----------
+        signals : pd.DataFrame
+            columes: [timestamp	side	type	price_limit	volume	stk_name	action	seq]
+            stk_name+seq用于唯一识别一次交易，可以有open和close两种actions，side==1<->long，side==-1<->short，side==0<->no action（优先级高于action）
+            todo: type为订单类型，服从米筐订单类型定义，如limit order / market order，具体查看support.OrderTypeInt
+        use_dates: list of str
+            回测日期
+        use_stk_names: list of str
+            回测股票简称（中文），如`"贵州茅台"`
+
+        Returns
+        -------
+        revenue_dict:dict, {stk_name: revenue}
+            收益
+        ret_dict:dict, {stk_name: revenue}
+            收益率
+        aligned_signals_dict: deprecated
+        
+        Examples
+        --------
+        >>> self.clean_ohb_dict['2022-06-29']['贵州茅台']
+                a5_p	a4_p	a3_p	a2_p	a1_p	b1_p	b2_p	b3_p	b4_p	b5_p	a5_v	a4_v	a3_v	a2_v	a1_v	b1_v	b2_v	b3_v	b4_v	b5_v	current
+        9:30:00.00	1947.87	1947.44	1947	1946	1945	1942.7	1942.6	1942	1941	1940.95	100	100	400	300	900	2290	100	100	100	100	1945
+        9:30:00.01	1947.87	1947.44	1947	1946	1945	1942.7	1942.6	1942	1941	1940.95	100	100	400	300	900	2290	100	100	100	100	1945
+        9:30:00.02	1947.87	1947.44	1947	1946	1945	1943	1942.7	1942.6	1942	1941	100	100	400	700	900	900	2290	100	100	100	1943
+        9:30:00.03	1947.87	1947.44	1947	1946	1945	1943	1942.7	1942.6	1942	1941	100	100	400	700	900	900	2290	100	100	100	1943
+        >>> signals
+        timestamp	side	type	price_limit	volume	stk_name	action	seq
+        2022/6/29 9:34	1	77	0	100	贵州茅台	open	0
+        2022/6/29 9:34	-1	77	0	100	中信证券	open	0
+        2022/6/29 9:35	-1	77	0	100	贵州茅台	open	1
+        2022/6/29 9:35	1	77	0	100	贵州茅台	close	0
+        2022/6/29 9:35	1	77	0	100	中信证券	open	1
+        2022/6/29 9:35	-1	77	0	100	中信证券	close	0
+        2022/6/29 9:36	-1	77	0	100	贵州茅台	close	1
+        2022/6/29 9:36	1	77	0	100	中信证券	close	1
         """
         if len(signals) == 0: raise ValueError("has no signals")
         revenue_dict = defaultdict(dict)  # dict of dict

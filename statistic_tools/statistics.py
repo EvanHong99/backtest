@@ -9,6 +9,9 @@ import pandas as pd
 from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score
 import numpy as np
 
+import config
+from support import Target
+
 
 class BaseStatistics(object):
     def __init__(self, *args, **kwargs):
@@ -26,14 +29,25 @@ class LobStatistics(BaseStatistics):
 
     @staticmethod
     def stat_pred_error(y_true, y_pred, name='stat')->pd.Series:
-        return pd.Series({'baseline_mae': y_true.abs().mean(),
-                          'baseline_rmse': np.sqrt(np.square(y_true).sum()),
-                          'mae': mean_absolute_error(y_true, y_pred),
-                          'mse': mean_squared_error(y_true, y_pred),
-                          'rmse': mean_squared_error(y_true, y_pred, squared=False),
-                          'r2_score': r2_score(y_true, y_pred),
-                          'explained_variance_score': explained_variance_score(y_true, y_pred)},
-                         name=name)
+        if config.target==Target.vol.name:
+            y_true_mean=y_true.abs().mean()
+            return pd.Series({'baseline_mae': np.mean(np.abs(y_true.abs()-y_true_mean)),
+                              'baseline_rmse': np.sqrt(np.square(y_true-y_true_mean).sum()),
+                              'mae': mean_absolute_error(y_true, y_pred),
+                              'mse': mean_squared_error(y_true, y_pred),
+                              'rmse': mean_squared_error(y_true, y_pred, squared=False),
+                              'r2_score': r2_score(y_true, y_pred),
+                              'explained_variance_score': explained_variance_score(y_true, y_pred)},
+                             name=name)
+        else:
+            return pd.Series({'baseline_mae': y_true.abs().mean(),
+                              'baseline_rmse': np.sqrt(np.square(y_true).sum()),
+                              'mae': mean_absolute_error(y_true, y_pred),
+                              'mse': mean_squared_error(y_true, y_pred),
+                              'rmse': mean_squared_error(y_true, y_pred, squared=False),
+                              'r2_score': r2_score(y_true, y_pred),
+                              'explained_variance_score': explained_variance_score(y_true, y_pred)},
+                             name=name)
 
     @staticmethod
     def stat_winrate(ret: pd.Series, signals, counterpart: bool, params=None):

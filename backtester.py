@@ -149,8 +149,8 @@ class LobBackTester(BaseTester):
 
     def calc_features(self, df, level, to_freq=None):
         # todo: 时间不连续、不规整，过于稀疏，归一化细节
-        # todo use polar
         fe = LobFeatureEngineering()
+        df=df.groupby(level=0).last()
         feature = fe.generate_cross_section(df, level=level)
         feature = pd.concat([df, feature], axis=1)
         feature.index = pd.to_datetime(feature.index)

@@ -164,7 +164,9 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         agg_rows = int(agg_timedelta / min_timedelta)
         step_rows = int(pred_timedelta / min_timedelta)
         features = features.rolling(agg_rows, min_periods=agg_rows, step=step_rows, closed='left', center=False).agg(
-            [np.mean, np.std, np.median])
+            [np.mean, np.std, np.median]) # todo 删除median
+        # todo 加入realized vol因子，需要注意该df是2 level header
+        ... # fixme
         return features
 
     @classmethod
@@ -368,7 +370,12 @@ class LobFeatureEngineering(object):
         pass
 
     def calc_wap(self, df, level, cross=True):
-        """Function to calculate first WAP"""
+        """Function to calculate first WAP
+
+        References
+        ----------
+        [1] optiver金牌算法. https://mp.weixin.qq.com/s/Pe4i3I9-ErYFE9uL5B5pvQ
+        """
         if cross:
             wap = (df[self.bp[level]] * df[self.av[level]] + df[self.ap[level]] * df[self.bv[level]]) / (
                     df[self.bv[level]] + df[self.av[level]])
@@ -653,7 +660,7 @@ class LobFeatureEngineering(object):
         """
 
         self.mp = self.calc_mid_price(clean_obh)
-        # 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。todo 好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
+        # todo 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。但好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
         # self.mp_ret = np.log(self.mp).diff().rename("mid_price_ret")
         self.spread = self.calc_spread(clean_obh)
         self.breadth_b, self.breadth_a = self.calc_price_breadth(clean_obh)
@@ -661,7 +668,7 @@ class LobFeatureEngineering(object):
         self.st = self.calc_spread_tick(clean_obh, num_levels=level)
         self.voi = self.calc_volume_order_imbalance(clean_obh)
         self.bsp = self.calc_buy_sell_pressure(clean_obh, level1=1, level2=level, method='MID')
-        # self.volatility = self.calc_realized_volatility(self.mp_ret)  # 计算ret的累积volatility
+        # self.volatility = self.calc_realized_volatility(self.mp_ret)  # 计算realized volatility需要在之后的rolling agg阶段
         self.gaps = self.calc_gaps(clean_obh, level=level)
         self.bavr = self.calc_bid_ask_volume_ratio(clean_obh, level=level)
 
@@ -687,6 +694,8 @@ class LobFeatureEngineering(object):
                self.gaps,
                self.bavr],
             axis=1)
+        # fixme将2 level header转为1 level
+        # df_feature.columns = ['_'.join(col) for col in df_feature.columns]  # time_id is changed to time_id_
 
         return self.features
 

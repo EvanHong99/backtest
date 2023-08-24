@@ -30,10 +30,11 @@ if __name__ == '__main__':
     for r, d, f in os.walk(detail_data_root):
         print(f)
         for filename in f:
+            print(filename)
+            if filename=='placeholder':continue
             parts = filename.split('_')
             _date = parts[0]
             stk_name = parts[1]
-            if filename == 'placeholder': continue
             if 'clean_obh' not in filename:continue
             if ('feature' in filename) and (stk_name in config.complete_status['features']):
                 continue
@@ -76,7 +77,7 @@ if __name__ == '__main__':
             self.alldata[config.date][stk_name] = self.load_data(file_root=self.file_root, date=config.date,
                                                                  stk_name=stk_name)  # random freq
             self.alldatas[config.date][stk_name] = self.preprocess_data(
-                self.alldata[config.date][stk_name], level=use_level, to_freq=min_freq)  # random freq
+                self.alldata[config.date][stk_name], level=use_level, to_freq=min_freq)  # min_freq freq
 
             dp = AggDataPreprocessor()
             # to agg_freq
