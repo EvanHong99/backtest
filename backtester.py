@@ -125,8 +125,8 @@ class LobBackTester(BaseTester):
         self.alldatas = defaultdict(dict)  # {dates:{stk_name:[data1,data2,...]}}
         self.all_signals = defaultdict(pd.DataFrame)
 
-    def load_models(self, model_root, stk_name,model_class):
-        model_loader = LobModelFeed(model_root=model_root, stk_name=stk_name,model_class=model_class)
+    def load_models(self, model_root, stk_name, model_class):
+        model_loader = LobModelFeed(model_root=model_root, stk_name=stk_name, model_class=model_class)
         self.models = model_loader.models
         return self.models
 
@@ -148,9 +148,22 @@ class LobBackTester(BaseTester):
         return data
 
     def calc_features(self, df, level, to_freq=None):
+        """
+
+        Parameters
+        ----------
+        df:
+            original frequency
+        level
+        to_freq
+
+        Returns
+        -------
+
+        """
         # todo: 时间不连续、不规整，过于稀疏，归一化细节
         fe = LobFeatureEngineering()
-        df=df.groupby(level=0).last()
+        df = df.groupby(level=0).last()
         feature = fe.generate_cross_section(df, level=level)
         feature = pd.concat([df, feature], axis=1)
         feature.index = pd.to_datetime(feature.index)
@@ -179,14 +192,6 @@ class LobBackTester(BaseTester):
         self.features = [ltp.add_head_tail(feature, head_timestamp=pd.to_datetime(s),
                                            tail_timestamp=pd.to_datetime(e)) for feature, (s, e) in
                          zip(self.features, config.ranges)]
-        # self.features = [ltp.change_freq(feature, freq=freq) for feature in self.features]
-        # 过早change freq会导致损失数据点
-        # alldatas = [ltp.change_freq(d, freq=freq) for d in alldatas]
-        # alldatas = [pd.merge(data, feature, left_index=True, right_index=True) for data, feature in
-        #                  zip(alldatas, self.features)]
-
-        # todo 添加动量features
-        ...
 
         self.features = [feature.fillna(0) for feature in self.features]
         return self.features
@@ -312,7 +317,7 @@ class LobBackTester(BaseTester):
         -----
         明确进行回测的是哪些股票，哪些日期
         """
-        self.models = self.load_models(self.model_root, 'general',model_class='automl')# 默认会加载4个时间段的models
+        self.models = self.load_models(self.model_root, 'general', model_class='automl')  # 默认会加载4个时间段的models
 
         # 明确进行回测的是哪些股票，哪些日期
         f_dict = defaultdict(list)  # {stk_name:(yyyy, mm, dd)}
@@ -324,10 +329,10 @@ class LobBackTester(BaseTester):
             for stk_name in self.stk_names:
                 self.stk_name = stk_name
                 f_dict[stk_name].append((yyyy, mm, dd))
-        f_dict = {k: sorted(list(set(v))) for k, v in f_dict.items()}# 去重
+        f_dict = {k: sorted(list(set(v))) for k, v in f_dict.items()}  # 去重
 
         # 读数据
-        data_dict = defaultdict(lambda: defaultdict(list)) # data_dict={date:{stkname:[data0,data1,data2,data3]}
+        data_dict = defaultdict(lambda: defaultdict(list))  # data_dict={date:{stkname:[data0,data1,data2,data3]}
         tar_dict = defaultdict(dict)  # data_dict={date:{stkname:tar_data}}
         datafeed = LobDataFeed()
         for stk_name, date_tuples in f_dict.items():
@@ -344,12 +349,13 @@ class LobBackTester(BaseTester):
                 # target
                 tar = None
                 self.alldata[config.date][stk_name] = datafeed.load_clean_obh(detail_data_root, config.date, stk_name,
-                                               snapshot_window=use_level,
-                                               use_cols=[str(LobColTemplate('a', 1, 'p')),
-                                                         str(LobColTemplate('a', 1, 'v')),
-                                                         str(LobColTemplate('b', 1, 'p')),
-                                                         str(LobColTemplate('b', 1, 'v')),
-                                                         str(LobColTemplate().current)])
+                                                                              snapshot_window=use_level,
+                                                                              use_cols=[
+                                                                                  str(LobColTemplate('a', 1, 'p')),
+                                                                                  str(LobColTemplate('a', 1, 'v')),
+                                                                                  str(LobColTemplate('b', 1, 'p')),
+                                                                                  str(LobColTemplate('b', 1, 'v')),
+                                                                                  str(LobColTemplate().current)])
                 temp = self.alldata[config.date][stk_name].asfreq(freq=min_freq, method='ffill')
                 shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
                 # todo 以一段时间的平均ret作为target
@@ -379,7 +385,7 @@ class LobBackTester(BaseTester):
                     # y_test_dict[stk_name][num] = pd.concat([y_test_dict[stk_name][num], y], axis=0)
 
                     # scale X data
-                    dp.load_scaler(scaler_root,FILE_FMT_scaler.format(stk_name,num,'_'))
+                    dp.load_scaler(scaler_root, FILE_FMT_scaler.format(stk_name, num, '_'))
                     X, = dp.std_scale(X, refit=False)
                     self.Xs.append(X)
                     self.ys.append(y)
@@ -401,7 +407,7 @@ class LobBackTester(BaseTester):
         # :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
         self.broker.load_data(self.alldata)
         # todo 需要增加多股票、多日期回测
-        revenue_dict, ret_dict, aligned_signals_dict=None,None,None
+        revenue_dict, ret_dict, aligned_signals_dict = None, None, None
         for date in list(data_dict.keys()):
             for stk_name in self.stk_names:
                 signals = self.all_signals[date].sort_index()
@@ -411,7 +417,8 @@ class LobBackTester(BaseTester):
                 #     self.broker.execute(signal)
 
                 # 批量交易
-                revenue_dict, ret_dict, aligned_signals_dict = self.broker.batch_execute(signals, use_dates=None, use_stk_names=None)
+                revenue_dict, ret_dict, aligned_signals_dict = self.broker.batch_execute(signals, use_dates=None,
+                                                                                         use_stk_names=None)
 
                 stat_revenue = self.statistics.stat_winrate(revenue_dict[date][stk_name],
                                                             aligned_signals_dict[date][stk_name]['side_open'],
@@ -445,9 +452,7 @@ class LobBackTester(BaseTester):
 
                 dp = AggDataPreprocessor()
                 # agg_freq=1min
-                self.alldatas[date][stk_name] = [
-                    dp.agg_features(feature, agg_freq=agg_freq, pred_n_steps=pred_n_steps, use_n_steps=use_n_steps) for
-                    feature in self.alldatas[date][stk_name]]
+                self.alldatas[date][stk_name] = [dp.agg_features(feature) for feature in self.alldatas[date][stk_name]]
 
                 # self.Xs, self.ys = self.transform_data(self.alldatas[date][stk_name],stk_name)
 
@@ -475,7 +480,7 @@ class LobBackTester(BaseTester):
         # start trade
         # :param signals: dict, {date:all_signals for all stks}
         # :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
-        revenue_dict, ret_dict, aligned_signals_dict=None,None,None
+        revenue_dict, ret_dict, aligned_signals_dict = None, None, None
         self.broker.load_data(self.alldata)
         # todo 需要增加多股票、多日期回测
         for date in self.dates:
@@ -503,31 +508,31 @@ class LobBackTester(BaseTester):
 
 
 if __name__ == '__main__':
-    stk_names = ["贵州茅台","中信证券"]
-    update_date('2022','06','29')
+    stk_names = ["贵州茅台", "中信证券"]
+    update_date('2022', '06', '29')
     datafeed = LobDataFeed()
     strategy = LobStrategy(max_close_timedelta=timedelta(minutes=int(freq[:-3]) * pred_n_steps))
-    broker = Broker(cash=1e6,commission=1e-3)
+    broker = Broker(cash=1e6, commission=1e-3)
     observer = LobObserver()
     statistics = LobStatistics()
 
-    bt=LobBackTester(model_root=model_root,
-                     file_root=detail_data_root,
-                     dates=['2022-06-29'], # todo 确认一致性是否有bug
-                     stk_names=stk_names,
-                     levels=5,
-                     target=Target.ret.name,
-                     freq=freq,
-                     pred_n_steps=pred_n_steps,
-                     use_n_steps=use_n_steps,
-                     drop_current=drop_current,
-                     datafeed=datafeed,
-                     strategy=strategy,
-                     broker=broker,
-                     observer=observer,
-                     statistics=statistics,
-                     )
+    bt = LobBackTester(model_root=model_root,
+                       file_root=detail_data_root,
+                       dates=['2022-06-29'],  # todo 确认一致性是否有bug
+                       stk_names=stk_names,
+                       levels=5,
+                       target=Target.ret.name,
+                       freq=freq,
+                       pred_n_steps=pred_n_steps,
+                       use_n_steps=use_n_steps,
+                       drop_current=drop_current,
+                       datafeed=datafeed,
+                       strategy=strategy,
+                       broker=broker,
+                       observer=observer,
+                       statistics=statistics,
+                       )
 
-    bt.run_bt() #
+    bt.run_bt()  #
 
     print()

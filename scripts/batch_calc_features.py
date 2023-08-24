@@ -8,11 +8,10 @@
 
 import os
 import sys
-from collections import defaultdict
-
 path = os.path.join(os.path.dirname(__file__), os.pardir)
 sys.path.append(path)
 
+from collections import defaultdict
 import config
 from backtester import LobBackTester
 from brokers.broker import Broker
@@ -31,11 +30,11 @@ if __name__ == '__main__':
         print(f)
         for filename in f:
             print(filename)
-            if filename=='placeholder':continue
+            if filename == 'placeholder': continue
             parts = filename.split('_')
             _date = parts[0]
             stk_name = parts[1]
-            if 'clean_obh' not in filename:continue
+            if 'clean_obh' not in filename: continue
             if ('feature' in filename) and (stk_name in config.complete_status['features']):
                 continue
             f_list[stk_name].append(_date)
@@ -44,7 +43,7 @@ if __name__ == '__main__':
     for stk_name in f_list.keys():
         if stk_name not in list(code_dict.keys()): continue
         if stk_name in config.exclude: continue
-        if stk_name in config.complete_status['features']:continue
+        if stk_name in config.complete_status['features']: continue
         for _date in f_list[stk_name]:
             yyyy = _date[:4]
             mm = _date[4:6]
@@ -81,12 +80,12 @@ if __name__ == '__main__':
 
             dp = AggDataPreprocessor()
             # to agg_freq
-            self.alldatas[config.date][stk_name] = [
-                dp.agg_features(feature, agg_freq=agg_freq, pred_n_steps=pred_n_steps, use_n_steps=use_n_steps) for feature
-                in self.alldatas[config.date][stk_name]]
+            self.alldatas[config.date][stk_name] = [dp.agg_features(feature) for feature in
+                                                    self.alldatas[config.date][stk_name]]
 
             for i, feature in enumerate(self.alldatas[config.date][stk_name]):
                 feature.to_csv(detail_data_root + FILE_FMT_feature.format(config.date, stk_name, str(i)))
             print('finish', stk_name, yyyy, mm, dd)
         config.complete_status['features'].append(stk_name)
         save_status()
+

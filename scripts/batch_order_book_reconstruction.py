@@ -5,6 +5,11 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description: 生成obh，即列为价格，行为该价格下的委托数
+import os
+import sys
+path = os.path.join(os.path.dirname(__file__), os.pardir)
+sys.path.append(path)
+
 import config
 from support import *
 # from config import *

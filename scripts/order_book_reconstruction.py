@@ -6,6 +6,11 @@
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
 
+import os
+import sys
+path = os.path.join(os.path.dirname(__file__), os.pardir)
+sys.path.append(path)
+
 import logging
 from copy import deepcopy
 from typing import Union

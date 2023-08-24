@@ -12,6 +12,7 @@ from datetime import timedelta
 
 import numpy as np
 import pandas as pd
+from numba import jit
 from sklearn.preprocessing import StandardScaler
 
 from config import *
@@ -55,7 +56,6 @@ class BaseDataPreprocessor(BasePreprocessor):
 
     def sub_illegal_punctuation(self, string):
         return re.sub('\W+', '_', string)
-
 
     def save_scaler(self, dir, file_name):
         # file_name=re.sub('\W+','_', file_name)
@@ -145,35 +145,132 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def agg_features(features: pd.DataFrame, agg_freq, pred_n_steps, use_n_steps):
+    def realized_volatility(series: pd.Series):
+        return np.sqrt(np.sum(series ** 2))
+
+    @staticmethod
+    def diff(series: pd.Series):
+        return series.iloc[-1] - series.iloc[0]
+
+    def agg_features(self, features: pd.DataFrame):
         """
-        testit
+        用于将非常高频的数据agg为高度抽象的特征，如mean、std、realized vol等，并且对agg的大小不同可以构造出动量特征
         Parameters
         ----------
         features
-        agg_freq
-        pred_n_steps
-        use_n_steps
-
+            ['ALO','AMO','ATT','BLO','BMO','BTT','a1_p','a1_v','a21_p_gap','a2_p','a2_v','a32_p_gap','a3_p','a3_v','a43_p_gap','a4_p','a4_v','a54_p_gap','a5_p','a5_v','b1_p','b1_v','b21_p_gap','b2_p','b2_v','b32_p_gap','b3_p','b3_v','b43_p_gap','b4_p','b4_v','b54_p_gap','b5_p','b5_v','bid_ask_volume_ratio1','bid_ask_volume_ratio2','bid_ask_volume_ratio3','bid_ask_volume_ratio4','bid_ask_volume_ratio5','buy_sell_pressure','cum_turnover','cum_vol','current','hi_2','hi_3','hi_4','li_1','li_2','li_3','li_4','mid_price','price_breadth_a','price_breadth_b','relative_spread','spread','spread_tick','turnover','voi','volume','wap1','wap1_c','wap2','wap2_c','wap3','wap3_c','wap4','wap4_c','wap5','wap5_c']
         Returns
         -------
 
         """
+
         # features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
+        # @jit
+        def _calc_decay_weight(m, H):
+            """计算衰减加权权重
+            考虑到距离当前时间较远日的数据对于当前因子取值的影响应该更小，而近期数据的影响应该更大，因此我们在加权收益上进行时间半衰的权重倾斜
+
+            Parameters
+            ----------
+            m:
+                收益加权的窗口长度
+            H:
+                𝐻 为半衰期
+
+            Returns
+            -------
+
+            References
+            ----------
+            [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
+            """
+            weights = np.array([np.power(2, -(m - j + 1) / H) for j in range(1, m + 1)])
+            weights = weights / sum(weights)
+            return weights
+
+        # @jit
+        def momentum_UMR(features: pd.DataFrame):
+            """
+
+            Parameters
+            ----------
+            features:
+                所有特征
+
+            split:
+                分为n等分，计算风险调整加权收益
+
+            Returns
+            -------
+
+            References
+            ----------
+            [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
+            """
+            if len(features) == 0: return pd.DataFrame({
+                'risk_avg_vol': [np.nan],
+                'risk_ret_std': [np.nan],
+                'risk_ret_skew': [np.nan],
+            })
+            split = 5
+            H = 2
+            agg_rows = step_rows = int(len(features) / split)
+            weights = _calc_decay_weight(split, H=2)
+            # weights = np.array([np.power(2, -(m - j + 1) / H) for j in range(1, m + 1)])
+            # weights = weights / sum(weights)
+            _features = features.iloc[::step_rows]
+            returns = _features['wap1_ret']
+            # 计算风险系数risk，不同代理变量有不同计算方法
+            risk_avg_vol = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
+                           _features['volume']
+            risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).std() - \
+                           (_features['wap1_ret']*100000)
+            risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew() - \
+                            _features['wap1_ret']
+
+            UMR = pd.DataFrame({
+                'risk_avg_vol': [np.sum(weights * risk_avg_vol * returns)],
+                'risk_ret_std': [np.sum(weights * risk_ret_std * returns)],
+                'risk_ret_skew': [np.sum(weights * risk_ret_skew * returns)],
+            })
+            return UMR
 
         agg_rows = int(agg_timedelta / min_timedelta)
         step_rows = int(pred_timedelta / min_timedelta)
-        features = features.rolling(agg_rows, min_periods=agg_rows, step=step_rows, closed='left', center=False).agg(
-            [np.mean, np.std, np.median]) # todo 删除median
-        # todo 加入realized vol因子，需要注意该df是2 level header
-        ... # fixme
-        return features
+        agg_mapper = {k: [np.mean, np.std] for k in features.columns}
+        agg_diff = {k: [self.diff] for k in
+                    ['cum_turnover', 'cum_vol']}  # 累积成交量不需要求平均，也无法按照last n进行平均用于反映动量，可行的方法为 末值-初值
+        agg_rv = {k: [self.realized_volatility] for k in ['wap1_ret', 'wap2_ret', 'mid_p_ret']}
+        agg_mapper.update(agg_diff)
+        agg_mapper.update(agg_rv)
+
+        # 加入realized vol因子，需要注意该df是2 level header
+        last_n_rows = [agg_rows, int(agg_rows / 2)] # todo 是否需要这样来构造动量
+        # last_n_rows = [agg_rows]
+        dfs = []
+        for last_n in last_n_rows:
+            agg_features = features.rolling(last_n, min_periods=last_n, step=step_rows, closed='left',
+                                            center=False).agg(agg_mapper)  # 删除了median
+            agg_features.columns = ['_'.join(col) for col in agg_features.columns]
+
+            mom_features = pd.concat([momentum_UMR(table) for table in
+                            features.rolling(last_n, min_periods=last_n, step=step_rows, closed='left', center=False,
+                                             method='table')])
+
+            mom_features.index=agg_features.index
+            temp = pd.concat([agg_features, mom_features], axis=1)
+            temp.columns = [col + '_' + str(last_n) for col in temp.columns]
+            dfs.append(temp)
+
+        agg_features = pd.concat(dfs, axis=1)
+
+        return agg_features
 
     @classmethod
     def get_flattened_Xy(cls, alldatas, num, target, pred_n_steps, use_n_steps, drop_current):
         pass
 
-    def align_Xy(self, X,y, pred_timedelta):
+    def align_Xy(self, X, y, pred_timedelta):
         start_time = X.index
         tar_time = start_time + pred_timedelta
 
@@ -184,8 +281,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         X = X.loc[start_time]
         y = y.loc[tar_time]
 
-        return X,y
-
+        return X, y
 
 
 class LobCleanObhPreprocessor(BasePreprocessor):
@@ -320,7 +416,7 @@ class LobTimePreprocessor(BasePreprocessor):
         except Exception as e:
             print('add_head_tail', df.index[0], head_timestamp, df.index[-1], tail_timestamp)
             raise e
-        res=df.copy(deep=True)
+        res = df.copy(deep=True)
         res.loc[pd.to_datetime(tail_timestamp)] = df.iloc[-1].copy(deep=True)
         res.loc[pd.to_datetime(head_timestamp)] = df.iloc[0].copy(deep=True)
         res = res.sort_index()
@@ -661,7 +757,6 @@ class LobFeatureEngineering(object):
 
         self.mp = self.calc_mid_price(clean_obh)
         # todo 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。但好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
-        # self.mp_ret = np.log(self.mp).diff().rename("mid_price_ret")
         self.spread = self.calc_spread(clean_obh)
         self.breadth_b, self.breadth_a = self.calc_price_breadth(clean_obh)
         self.rs = self.calc_relative_spread(clean_obh)
@@ -672,17 +767,20 @@ class LobFeatureEngineering(object):
         self.gaps = self.calc_gaps(clean_obh, level=level)
         self.bavr = self.calc_bid_ask_volume_ratio(clean_obh, level=level)
 
-        self.waps = [self.calc_wap(clean_obh, level=i, cross=False) for i in range(1, level + 1)] + [
-            self.calc_wap(clean_obh, level=i, cross=True) for i in range(1, level + 1)]
+        self.waps = [self.calc_wap(clean_obh, level=i, cross=True) for i in range(1, level + 1)] + [
+            self.calc_wap(clean_obh, level=i, cross=False) for i in range(1, level + 1)]
         self.lis = [self.calc_length_imbalance(clean_obh, level=i) for i in range(1, level)]
         self.his = [self.calc_height_imbalance(clean_obh, level=i) for i in range(2, level)]
+
+        self.mp_ret = np.log(self.mp).diff().rename("mid_p_ret")
+        self.wap1_ret = np.log(self.waps[0]).diff().rename("wap1_ret")
+        self.wap2_ret = np.log(self.waps[1]).diff().rename("wap2_ret")
 
         self.features = pd.concat(
             self.waps
             + self.lis
             + self.his
             + [self.mp,
-               # self.mp_ret,
                self.spread,
                self.breadth_b,
                self.breadth_a,
@@ -692,7 +790,11 @@ class LobFeatureEngineering(object):
                self.bsp,
                # self.volatility, # 会逐渐减小为0
                self.gaps,
-               self.bavr],
+               self.bavr,
+               self.mp_ret,
+               self.wap1_ret,
+               self.wap2_ret,
+               ],
             axis=1)
         # fixme将2 level header转为1 level
         # df_feature.columns = ['_'.join(col) for col in df_feature.columns]  # time_id is changed to time_id_
