@@ -182,8 +182,7 @@ class LobDataFeed(BaseDataFeed):
         return self.vol_tov
 
     def load_feature(self, file_root, date, stk_name,num):
-        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=[0,1])
-        self.feature.columns=['_'.join(h) for h in self.feature.columns]
+        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=0)
         self.feature.index = pd.to_datetime(self.feature.index)
 
         return self.feature

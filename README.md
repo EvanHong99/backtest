@@ -22,7 +22,7 @@
 | backtest 	  | 多只股票的通用模式                                                                           |   1    |
 |   urgent    | 1min跳的数据，每天240条数据                                                                   |   1    |
 |    data     | use polar                                                                           |   0    |
-|    data     | pca, 聚类                                                                             |   0    |
+|    data     | pca, 聚类                                                                             |   -1   |
 |    model    | ensemble models, lasso, rnn, automl                                                 |   0    |
 |    model    | auto-encoder: rnn encoder - many to one = one to many - decoder. VAE/Adversarial AE |   0    |
 | backtest 	  | 如果胜率可以，就跑回测净值曲线                                                                     |   0    |
@@ -39,5 +39,6 @@
 |    todo     | 转为分类任务                                                                              |   0    |
 |    todo     | 实现并行计算因子、scaler等任务                                                                  |   0    |
 |    todo     | 转3s低频数据，量价，进行预测                                                                     |   0    |
+|    todo     | shuffle后按比例划分                                                                       |   0    |
 
 
