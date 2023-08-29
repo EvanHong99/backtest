@@ -7,8 +7,6 @@
 # @Description:
 import logging
 from copy import deepcopy
-import flaml
-import flaml.automl.state
 
 from config import *
 import config

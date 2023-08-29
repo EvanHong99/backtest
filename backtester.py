@@ -16,7 +16,6 @@ from copy import deepcopy
 from typing import List, Union
 
 from sklearn.utils import shuffle
-import flaml
 
 from brokers.broker import Broker
 from config import *
@@ -130,7 +129,7 @@ class LobBackTester(BaseTester):
         self.models = model_loader.models
         return self.models
 
-    def load_data(self, file_root, date, stk_name) -> pd.DataFrame:
+    def load_data(self, file_root, date, stk_name,load_obh=True,load_vol_tov=True,load_events=True) -> pd.DataFrame:
         """
 
         :param file_root:
@@ -139,15 +138,22 @@ class LobBackTester(BaseTester):
         :return: pd.DataFrame,(clean_obh_dict+vol_tov), random freq
         """
         self.datafeed = LobDataFeed()
-        self.clean_obh = self.datafeed.load_clean_obh(file_root=file_root, date=date, stk_name=stk_name,
+        dfs=[]
+        if load_obh:
+            self.clean_obh = self.datafeed.load_clean_obh(file_root=file_root, date=date, stk_name=stk_name,
                                                       snapshot_window=self.levels)
-        self.vol_tov = self.datafeed.load_vol_tov(file_root=file_root, date=date, stk_name=stk_name)
-        self.events = self.datafeed.load_events(file_root=file_root, date=date, stk_name=stk_name)
+            dfs.append(self.clean_obh)
+        if load_vol_tov:
+            self.vol_tov = self.datafeed.load_vol_tov(file_root=file_root, date=date, stk_name=stk_name)
+            dfs.append(self.vol_tov)
+        if load_events:
+            self.events = self.datafeed.load_events(file_root=file_root, date=date, stk_name=stk_name)
+            dfs.append(self.events)
         # self.trade_details,self.order_details=self.datafeed.load_details(data_root,date,code_dict[stk_name])
-        data = pd.concat([self.clean_obh, self.vol_tov, self.events], axis=1).ffill()
+        data = pd.concat(dfs, axis=1).ffill()
         return data
 
-    def calc_features(self, df, level, to_freq=None):
+    def _calc_features(self, df, level, to_freq=None):
         """
 
         Parameters
@@ -174,7 +180,7 @@ class LobBackTester(BaseTester):
         return feature
 
     # testit
-    def preprocess_data(self, data, level, to_freq=None) -> list:
+    def calc_features(self, data, level, to_freq=None) -> list:
         """
         将数据划分为4份，每份一小时
         :param data: 10ms
@@ -187,7 +193,7 @@ class LobBackTester(BaseTester):
         alldatas = [ltp.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
                                       tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in
                     zip(alldatas, config.ranges)]
-        self.features = [self.calc_features(data, level=level, to_freq=to_freq) for data in
+        self.features = [self._calc_features(data, level=level, to_freq=to_freq) for data in
                          alldatas]  # 尚未agg
         self.features = [ltp.add_head_tail(feature, head_timestamp=pd.to_datetime(s),
                                            tail_timestamp=pd.to_datetime(e)) for feature, (s, e) in
@@ -447,7 +453,7 @@ class LobBackTester(BaseTester):
                 self.alldata[date][stk_name] = self.load_data(file_root=self.file_root, date=date,
                                                               stk_name=stk_name)  # random freq
 
-                self.alldatas[date][stk_name] = self.preprocess_data(
+                self.alldatas[date][stk_name] = self.calc_features(
                     self.alldata[date][stk_name], level=use_level, to_freq=min_freq)  # min_freq, 10ms
 
                 dp = AggDataPreprocessor()

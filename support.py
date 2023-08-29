@@ -18,6 +18,7 @@ from datetime import timedelta
 import pickle
 import json
 import logging
+from typing import Union
 
 
 # import config # 在函数中import
@@ -127,7 +128,7 @@ def get_trade_details(data_root, date, symbol):
         return None
 
 
-def update_date(yyyy: str, mm: str, dd: str):
+def update_date(yyyy: Union[str,int], mm: Union[str,int], dd: Union[str,int]):
     import config
 
     # global y
@@ -140,9 +141,9 @@ def update_date(yyyy: str, mm: str, dd: str):
     # global important_times
     # global ranges
 
-    config.y = yyyy
-    config.m = mm
-    config.d = dd
+    config.y = str(yyyy)
+    config.m = str(mm)
+    config.d = str(dd)
 
     config.date = f'{config.y}{config.m}{config.d}'
     config.date1 = f'{config.y}-{config.m}-{config.d}'
@@ -160,13 +161,13 @@ def update_date(yyyy: str, mm: str, dd: str):
         'close_call_auction_end': pd.to_datetime(f'{config.date1} 15:00:00.000000'), }
 
     config.ranges = [(pd.to_datetime(f'{config.date1} 09:30:00.000'),
-                      pd.to_datetime(f'{config.date1} 10:30:00.000') - timedelta(milliseconds=10)),
+                      pd.to_datetime(f'{config.date1} 10:30:00.000') - config.min_timedelta),
                      (pd.to_datetime(f'{config.date1} 10:30:00.000'),
-                      pd.to_datetime(f'{config.date1} 11:30:00.000') - timedelta(milliseconds=10)),
+                      pd.to_datetime(f'{config.date1} 11:30:00.000') - config.min_timedelta),
                      (pd.to_datetime(f'{config.date1} 13:00:00.000'),
-                      pd.to_datetime(f'{config.date1} 14:00:00.000') - timedelta(milliseconds=10)),
+                      pd.to_datetime(f'{config.date1} 14:00:00.000') - config.min_timedelta),
                      (pd.to_datetime(f'{config.date1} 14:00:00.000'),
-                      pd.to_datetime(f'{config.date1} 14:57:00.000') - timedelta(milliseconds=10))]
+                      pd.to_datetime(f'{config.date1} 14:57:00.000') - config.min_timedelta)]
     # print(f"in function update to date {config.date} {config.date1}")
     return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
 
@@ -189,24 +190,41 @@ def __check_obedience(d: dict):
         logging.warning(f"set(d['features'])-set(d['orderbooks']) {set(d['features']) - set(d['orderbooks'])}")
 
 
-def load_status():
+def load_status(is_tick=False):
     import config
-    with open(config.root + 'backtest/complete_status.json', 'r', encoding='utf8') as fr:
+    path='backtest/complete_status.json'
+    if is_tick:
+        path = 'backtest/complete_status_tick.json'
+    with open(config.root + path, 'r', encoding='utf8') as fr:
         config.complete_status = json.load(fr)
     print("load_status", config.complete_status)
     __check_obedience(config.complete_status)
 
 
-def save_status():
+def save_status(is_tick=False):
     import config
-    with open(config.root + 'backtest/complete_status.json', 'w', encoding='utf8') as fw:
-        json.dump(config.complete_status, fw, ensure_ascii=False)
+    path='backtest/complete_status.json'
+    if is_tick:
+        path = 'backtest/complete_status_tick.json'
+    with open(config.root + path, 'w', encoding='utf8') as fw:
+        json.dump(config.complete_status, fw, ensure_ascii=False,indent=4)
     print("save_status", config.complete_status)
     __check_obedience(config.complete_status)
 
 
 def realized_volatility(series):
     return np.sqrt(np.sum(series ** 2))
+
+def save_concat_data(data_dict,name):
+    import config
+    with open(config.data_root + f"concat_tick_data/{name}.pkl", 'wb') as fw:
+        pickle.dump(data_dict, fw, pickle.HIGHEST_PROTOCOL)
+
+def load_concat_data(name):
+    import config
+    with open(config.data_root + f"concat_tick_data/{name}.pkl", 'rb') as fr:
+        data_dict = pickle.load(fr)
+    return data_dict
 
 
 if __name__ == '__main__':

@@ -8,6 +8,9 @@
 
 import os
 import sys
+
+import pandas as pd
+
 path = os.path.join(os.path.dirname(__file__), os.pardir)
 sys.path.append(path)
 
@@ -23,28 +26,28 @@ from strategies import LobStrategy
 from support import *
 
 if __name__ == '__main__':
-    load_status()
+    load_status(is_tick=True)
 
     f_list = defaultdict(list)
-    for r, d, f in os.walk(detail_data_root):
-        print(f)
+    for r, d, f in os.walk(data_root+'tick_data/'):
         for filename in f:
-            print(filename)
             if filename == 'placeholder': continue
-            parts = filename.split('_')
-            _date = parts[0]
-            stk_name = parts[1]
             if 'clean_obh' not in filename: continue
-            if ('feature' in filename) and (stk_name in config.complete_status['features']):
-                continue
+            parts = filename.split('_')
+            _date = str(pd.to_datetime(parts[0]).date())
+            stk_name = parts[1]
+            if config.complete_status['features'].get(stk_name) is not None:
+                if _date in config.complete_status['features'].get(stk_name):
+                    continue
             f_list[stk_name].append(_date)
             f_list[stk_name] = sorted(list(set(f_list[stk_name])))
 
     for stk_name in f_list.keys():
         if stk_name not in list(code_dict.keys()): continue
         if stk_name in config.exclude: continue
-        if stk_name in config.complete_status['features']: continue
+        # if stk_name in config.complete_status['features']: continue
         for _date in f_list[stk_name]:
+            _date=_date.replace('-','')
             yyyy = _date[:4]
             mm = _date[4:6]
             dd = _date[-2:]
@@ -56,7 +59,7 @@ if __name__ == '__main__':
             observer = LobObserver()
 
             self = LobBackTester(model_root=model_root,
-                                 file_root=detail_data_root,
+                                 file_root=data_root+'tick_data/',
                                  dates=[],  # todo 确认一致性是否有bug
                                  stk_names=[],
                                  levels=5,
@@ -74,18 +77,19 @@ if __name__ == '__main__':
             self.stk_name = stk_name
 
             self.alldata[config.date][stk_name] = self.load_data(file_root=self.file_root, date=config.date,
-                                                                 stk_name=stk_name)  # random freq
+                                                                 stk_name=stk_name,load_obh=True,load_vol_tov=True,load_events=False)  # random freq
             self.alldatas[config.date][stk_name] = self.calc_features(
                 self.alldata[config.date][stk_name], level=use_level, to_freq=min_freq)  # min_freq freq
 
             dp = AggDataPreprocessor()
-            # to agg_freq
-            self.alldatas[config.date][stk_name] = [dp.agg_features(feature) for feature in
+            self.alldatas[config.date][stk_name] = [dp.agg_features(feature,use_events=False) for feature in
                                                     self.alldatas[config.date][stk_name]]
 
             for i, feature in enumerate(self.alldatas[config.date][stk_name]):
-                feature.to_csv(detail_data_root + FILE_FMT_feature.format(config.date, stk_name, str(i)))
+                feature.to_csv(data_root+'tick_data/' + FILE_FMT_feature.format(config.date, stk_name, str(i)))
             print('finish', stk_name, yyyy, mm, dd)
-        config.complete_status['features'].append(stk_name)
-        save_status()
+            if config.complete_status['features'].get(stk_name) is None:
+                config.complete_status['features'][stk_name]=[config.date1]
+            else:config.complete_status['features'][stk_name].append(config.date1)
+            save_status(is_tick=True)
 

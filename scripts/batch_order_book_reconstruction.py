@@ -22,7 +22,7 @@ if __name__ == '__main__':
     skip = 0
     limit = 50
     snapshot_window = 10
-    ohlc = pd.read_csv(data_root + 'hs300_ohlc.csv', index_col='code')
+    # ohlc = pd.read_csv(data_root + 'hs300_ohlc.csv', index_col='code')
     load_status()
     y, m = '2022', '06'
     for stk_name in list(code_dict.keys())[skip:limit]:

@@ -99,6 +99,7 @@ exclude=['海天味业','航发动力','包钢股份','闻泰科技','长城汽�
 
 
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
+# root = '/content/drive/MyDrive/work/internship/haitong_sec/2023.06.08超高频上证50指数计算/'
 data_root = root + 'data/'
 detail_data_root = data_root + '个股交易细节/'
 res_root = root + 'res/'
@@ -129,7 +130,8 @@ ranges = None
 
 # prediction settings
 target = Target.vol.name  # ret,current
-min_freq='10ms' # 最小精度，load data默认将数据asfreq至该freq
+min_freq='1s' # 最小精度，load data默认将数据asfreq至该freq
+# min_freq='10ms' # 最小精度，load data默认将数据asfreq至该freq
 agg_freq='1min'
 freq = agg_freq
 freq_minutes=1
@@ -138,7 +140,15 @@ use_n_steps = 3  # 利用use_n_steps个steps的数据去预测pred_n_steps之后
 drop_current = False  # 是否将当前股价作为因子输入给模型
 use_level = 5
 
-min_timedelta=timedelta(milliseconds=int(min_freq[:-2]))
+
+if min_freq.endswith('min'):
+    min_timedelta = timedelta(minutes=int(min_freq[:-3]))
+elif min_freq.endswith('ms'):
+    min_timedelta = timedelta(milliseconds=int(min_freq[:-2]))
+elif min_freq.endswith('s'):
+    min_timedelta = timedelta(seconds=int(min_freq[:-1]))
+else:
+    raise NotImplementedError("in config")
 if agg_freq.endswith('min'):
     agg_timedelta = timedelta(minutes=int(agg_freq[:-3]) * use_n_steps)
     pred_timedelta = timedelta(minutes=int(agg_freq[:-3]) * pred_n_steps)

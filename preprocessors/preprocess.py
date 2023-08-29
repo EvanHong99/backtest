@@ -152,7 +152,75 @@ class AggDataPreprocessor(BaseDataPreprocessor):
     def diff(series: pd.Series):
         return series.iloc[-1] - series.iloc[0]
 
-    def agg_features(self, features: pd.DataFrame):
+    @staticmethod
+    def _calc_decay_weight(m, H):
+        """计算衰减加权权重
+        考虑到距离当前时间较远日的数据对于当前因子取值的影响应该更小，而近期数据的影响应该更大，因此我们在加权收益上进行时间半衰的权重倾斜
+
+        Parameters
+        ----------
+        m:
+            收益加权的窗口长度
+        H:
+            𝐻 为半衰期
+
+        Returns
+        -------
+
+        References
+        ----------
+        [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
+        """
+        weights = np.array([np.power(2, -(m - j + 1) / H) for j in range(1, m + 1)])
+        weights = weights / sum(weights)
+        return weights
+
+    @classmethod
+    def momentum_UMR(cls,features: pd.DataFrame):
+        """
+
+        Parameters
+        ----------
+        features:
+            所有特征
+
+        split:
+            分为n等分，计算风险调整加权收益
+
+        Returns
+        -------
+
+        References
+        ----------
+        [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
+        """
+        if len(features) == 0: return pd.DataFrame({
+            'risk_avg_vol': [np.nan],
+            'risk_ret_std': [np.nan],
+            'risk_ret_skew': [np.nan],
+        })
+        split = 5
+        H = 2
+        agg_rows = step_rows = int(len(features) / split)
+        weights = cls._calc_decay_weight(split, H=2)
+        _features = features.iloc[::step_rows]
+        returns = _features['wap1_ret']
+        # 计算风险系数risk，不同代理变量有不同计算方法
+        risk_avg_vol = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
+                       _features['volume']
+        risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).std() - \
+                       (_features['wap1_ret']*100000)
+        risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew() - \
+                        _features['wap1_ret']
+
+        UMR = pd.DataFrame({
+            'risk_avg_vol': [np.sum(weights * risk_avg_vol * returns)],
+            'risk_ret_std': [np.sum(weights * risk_ret_std * returns)],
+            'risk_ret_skew': [np.sum(weights * risk_ret_skew * returns)],
+        })
+        return UMR
+
+    def agg_features(self, features: pd.DataFrame,use_events=True):
         """
         用于将非常高频的数据agg为高度抽象的特征，如mean、std、realized vol等，并且对agg的大小不同可以构造出动量特征
         Parameters
@@ -164,85 +232,17 @@ class AggDataPreprocessor(BaseDataPreprocessor):
 
         """
 
-        # features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
-        # @jit
-        def _calc_decay_weight(m, H):
-            """计算衰减加权权重
-            考虑到距离当前时间较远日的数据对于当前因子取值的影响应该更小，而近期数据的影响应该更大，因此我们在加权收益上进行时间半衰的权重倾斜
-
-            Parameters
-            ----------
-            m:
-                收益加权的窗口长度
-            H:
-                𝐻 为半衰期
-
-            Returns
-            -------
-
-            References
-            ----------
-            [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
-            """
-            weights = np.array([np.power(2, -(m - j + 1) / H) for j in range(1, m + 1)])
-            weights = weights / sum(weights)
-            return weights
-
-        # @jit
-        def momentum_UMR(features: pd.DataFrame):
-            """
-
-            Parameters
-            ----------
-            features:
-                所有特征
-
-            split:
-                分为n等分，计算风险调整加权收益
-
-            Returns
-            -------
-
-            References
-            ----------
-            [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
-            """
-            if len(features) == 0: return pd.DataFrame({
-                'risk_avg_vol': [np.nan],
-                'risk_ret_std': [np.nan],
-                'risk_ret_skew': [np.nan],
-            })
-            split = 5
-            H = 2
-            agg_rows = step_rows = int(len(features) / split)
-            weights = _calc_decay_weight(split, H=2)
-            # weights = np.array([np.power(2, -(m - j + 1) / H) for j in range(1, m + 1)])
-            # weights = weights / sum(weights)
-            _features = features.iloc[::step_rows]
-            returns = _features['wap1_ret']
-            # 计算风险系数risk，不同代理变量有不同计算方法
-            risk_avg_vol = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
-                           _features['volume']
-            risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).std() - \
-                           (_features['wap1_ret']*100000)
-            risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew() - \
-                            _features['wap1_ret']
-
-            UMR = pd.DataFrame({
-                'risk_avg_vol': [np.sum(weights * risk_avg_vol * returns)],
-                'risk_ret_std': [np.sum(weights * risk_ret_std * returns)],
-                'risk_ret_skew': [np.sum(weights * risk_ret_skew * returns)],
-            })
-            return UMR
-
         agg_rows = int(agg_timedelta / min_timedelta)
         step_rows = int(pred_timedelta / min_timedelta)
         agg_mapper = {k: [np.mean, np.std] for k in features.columns}
-        agg_diff = {k: [self.diff] for k in
-                    ['cum_turnover', 'cum_vol']}  # 累积成交量不需要求平均，也无法按照last n进行平均用于反映动量，可行的方法为 末值-初值
+        # 累积成交量不需要求平均，也无法按照last n进行平均用于反映动量，可行的方法为 末值-初值
+        agg_diff = {k: [self.diff] for k in ['cum_turnover', 'cum_vol']}
         agg_rv = {k: [self.realized_volatility] for k in ['wap1_ret', 'wap2_ret', 'mid_p_ret']}
+        agg_sum={k:[np.sum] for k in ['ALO','AMO','ATT','BLO','BMO','BTT']}
         agg_mapper.update(agg_diff)
         agg_mapper.update(agg_rv)
+        if use_events:
+            agg_mapper.update(agg_sum)
 
         # 加入realized vol因子，需要注意该df是2 level header
         last_n_rows = [agg_rows, int(agg_rows / 2)] # todo 是否需要这样来构造动量
@@ -253,7 +253,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
                                             center=False).agg(agg_mapper)  # 删除了median
             agg_features.columns = ['_'.join(col) for col in agg_features.columns]
 
-            mom_features = pd.concat([momentum_UMR(table) for table in
+            mom_features = pd.concat([self.momentum_UMR(table) for table in
                             features.rolling(last_n, min_periods=last_n, step=step_rows, closed='left', center=False,
                                              method='table')])
 
@@ -389,21 +389,29 @@ class LobTimePreprocessor(BasePreprocessor):
         # self.freq = '200ms'
 
     @staticmethod
-    def del_untrade_time(df, cut_tail=True):
+    def del_untrade_time(df, cut_tail=True,strip=None):
         """
 
-        :param df:
-        :param cut_tail: 去掉尾盘3min竞价
-        :return:
-        """
+        Parameters
+        ----------
+        df
+        cut_tail
+            去掉尾盘3min竞价
+        strip
+            去掉开收盘n min的数据
 
+        Returns
+        -------
+
+        """
+        start_time=config.important_times['continues_auction_am_start']
         end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
             'continues_auction_pm_end']
-        a = df.loc[
-            config.important_times['continues_auction_am_start']:config.important_times['continues_auction_am_end']]
+        if strip is not None:
+            ...
+        a = df.loc[start_time:config.important_times['continues_auction_am_end']]
         b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
         temp = pd.concat([a, b], axis=0)
-
         temp = temp.sort_index()
         return temp
 
@@ -763,7 +771,6 @@ class LobFeatureEngineering(object):
         self.st = self.calc_spread_tick(clean_obh, num_levels=level)
         self.voi = self.calc_volume_order_imbalance(clean_obh)
         self.bsp = self.calc_buy_sell_pressure(clean_obh, level1=1, level2=level, method='MID')
-        # self.volatility = self.calc_realized_volatility(self.mp_ret)  # 计算realized volatility需要在之后的rolling agg阶段
         self.gaps = self.calc_gaps(clean_obh, level=level)
         self.bavr = self.calc_bid_ask_volume_ratio(clean_obh, level=level)
 
