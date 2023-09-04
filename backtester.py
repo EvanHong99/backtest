@@ -433,13 +433,13 @@ class LobBackTester(BaseTester):
                                                         aligned_signals_dict[date][stk_name]['side_open'],
                                                         counterpart=True, params=None)
 
-                stat_revenue.to_csv(res_root + f"{date}_{stk_name}_stat_revenue.csv")
-                stat_ret.to_csv(res_root + f"{date}_{stk_name}_stat_ret.csv")
+                stat_revenue.to_csv(res_root + f"{date}_{stk_name}_stat_revenue_pred{pred_timedelta}.csv")
+                stat_ret.to_csv(res_root + f"{date}_{stk_name}_stat_ret_pred{pred_timedelta}.csv")
 
         return revenue_dict, ret_dict, aligned_signals_dict
 
     def run(self):
-        """
+        """最初版本
 
         :return: 
         """

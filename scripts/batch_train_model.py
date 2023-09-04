@@ -25,7 +25,7 @@ from autogluon.tabular import TabularPredictor
 from config import *
 from support import *
 from datafeeds.datafeed import LobDataFeed
-from support import update_date, LobColTemplate, save_model, extract_model_name
+from support import update_date, LobColTemplate, save_model, get_model_name
 from preprocessors.preprocess import AggDataPreprocessor, LobTimePreprocessor
 from statistic_tools.statistics import LobStatistics
 
@@ -340,16 +340,16 @@ if __name__ == '__main__':
 
             # save
             mname = f'{stk_name}_{config.target}'
-            save_model(model_root, FILE_FMT_model.format(mname, num, extract_model_name(model)), model)
+            save_model(model_root, FILE_FMT_model.format(mname, num, get_model_name(model)), model)
         config.complete_status['models'].append(stk_name)
         config.complete_status['models'] = list(set(config.complete_status['models']))
         save_status()
 
         print(stat)
         print(all_y_pred)
-        stat.to_csv(res_root + f"stats/stat_{stk_name}_{extract_model_name(model)}_{config.target}.csv")
-        all_y_pred.to_csv(res_root + f"preds/all_y_pred_{stk_name}_{extract_model_name(model)}_{config.target}.csv")
+        stat.to_csv(res_root + f"stats/stat_{stk_name}_{get_model_name(model)}_{config.target}.csv")
+        all_y_pred.to_csv(res_root + f"preds/all_y_pred_{stk_name}_{get_model_name(model)}_{config.target}.csv")
         all_y_pred_trunc.to_csv(
-            res_root + f"preds/all_y_pred_trunc_{stk_name}_{extract_model_name(model)}_{config.target}.csv")
+            res_root + f"preds/all_y_pred_trunc_{stk_name}_{get_model_name(model)}_{config.target}.csv")
         all_y_true.to_csv(res_root + f"preds/all_y_true_{stk_name}_{config.target}.csv")
 # todo 数据量太少

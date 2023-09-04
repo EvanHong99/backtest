@@ -7,7 +7,7 @@
 # @Description:
 from datetime import timedelta
 
-from support import Target
+from support import Target,str2timedelta
 
 code_dict = {
     # '浦发银行': '600000.XSHG',
@@ -97,7 +97,6 @@ exclude=['海天味业','航发动力','包钢股份','闻泰科技','长城汽�
 # exclude=['紫金矿业','工商银行','中国建筑','中国石化']
 
 
-
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
 # root = '/content/drive/MyDrive/work/internship/haitong_sec/2023.06.08超高频上证50指数计算/'
 data_root = root + 'data/'
@@ -129,37 +128,34 @@ ranges = None
 
 
 # prediction settings
+# ret
 target = Target.vol.name  # ret,current
-min_freq='1s' # 最小精度，load data默认将数据asfreq至该freq
-# min_freq='10ms' # 最小精度，load data默认将数据asfreq至该freq
-agg_freq='1min'
+min_freq='10ms' # 最小精度，agg前data的频率，load data默认将数据asfreq至该freq
+agg_freq=min_freq # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
 freq = agg_freq
 freq_minutes=1
-pred_n_steps = 1  # 预测1个1min
+pred_n_steps = 200  # 预测1个1min
 use_n_steps = 3  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
 drop_current = False  # 是否将当前股价作为因子输入给模型
 use_level = 5
+strip_time='5min' # 去掉开收盘5min数据
+# vol
+# target = Target.vol.name  # ret,current
+# min_freq='1s' # 最小精度，agg前data的频率，load data默认将数据asfreq至该freq
+# agg_freq='1min' # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
+# freq = agg_freq
+# freq_minutes=1
+# pred_n_steps = 1  # 预测1个1min
+# use_n_steps = 3  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
+# drop_current = False  # 是否将当前股价作为因子输入给模型
+# use_level = 5
+# strip_time='5min' # 去掉开收盘5min数据
 
+min_timedelta=str2timedelta(min_freq)
+agg_timedelta=str2timedelta(agg_freq,use_n_steps)
+pred_timedelta=str2timedelta(agg_freq,pred_n_steps)
+strip_timedelta=str2timedelta(strip_time)
 
-if min_freq.endswith('min'):
-    min_timedelta = timedelta(minutes=int(min_freq[:-3]))
-elif min_freq.endswith('ms'):
-    min_timedelta = timedelta(milliseconds=int(min_freq[:-2]))
-elif min_freq.endswith('s'):
-    min_timedelta = timedelta(seconds=int(min_freq[:-1]))
-else:
-    raise NotImplementedError("in config")
-if agg_freq.endswith('min'):
-    agg_timedelta = timedelta(minutes=int(agg_freq[:-3]) * use_n_steps)
-    pred_timedelta = timedelta(minutes=int(agg_freq[:-3]) * pred_n_steps)
-elif agg_freq.endswith('ms'):
-    agg_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * use_n_steps)
-    pred_timedelta = timedelta(milliseconds=int(agg_freq[:-2]) * pred_n_steps)
-elif agg_freq.endswith('s'):
-    agg_timedelta = timedelta(seconds=int(agg_freq[:-1]) * use_n_steps)
-    pred_timedelta = timedelta(seconds=int(agg_freq[:-1]) * pred_n_steps)
-else:
-    raise NotImplementedError("in config")
 
 # init
 # update_date(yyyy='2022', mm='06', dd='29')

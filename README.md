@@ -47,10 +47,11 @@
 |     eda     | y distribution, feature distribution                                                                 |   0    |
 |    data     | 多拿些数据，去掉一些小幅波动的点，尽量去拟合大的波动                                                                           |   0    |
 |  backtest   | 转为分类问题，10min波动率变化方向，到阈值才算波动的明显变化                                                                     |   0    |
+|  backtest   | 看突变值                                                                                                 |   0    |
 
 
 ## Tricks
 
 ### skewness and kurtosis
 
-![skewness and kurtosis](../res/y_distribution.png)
+![skewness and kurtosis](../res/preds/alleviate_skewness/y_distribution.png)

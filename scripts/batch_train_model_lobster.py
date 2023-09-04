@@ -31,7 +31,7 @@ from config import *
 import config
 from support import *
 from datafeeds.datafeed import LobDataFeed
-from support import update_date, LobColTemplate, save_model, extract_model_name
+from support import update_date, LobColTemplate, save_model, get_model_name
 from preprocessors.preprocess import AggDataPreprocessor, LobTimePreprocessor, BaseDataPreprocessor
 from statistic_tools.statistics import LobStatistics
 
@@ -234,9 +234,9 @@ if __name__ == '__main__':
             print(results)
 
         # save
-        save_model(model_root, FILE_FMT_model.format('lobster_general', num,extract_model_name(model)), model)
+        save_model(model_root, FILE_FMT_model.format('lobster_general', num, get_model_name(model)), model)
 
     print(stat)
     print(all_y_pred)
-    stat.to_csv(res_root + f"lobster_stat_{extract_model_name(model)}.csv")
-    all_y_pred.to_csv(res_root + f"lobster_all_y_pred_{extract_model_name(model)}.csv")
+    stat.to_csv(res_root + f"lobster_stat_{get_model_name(model)}.csv")
+    all_y_pred.to_csv(res_root + f"lobster_all_y_pred_{get_model_name(model)}.csv")

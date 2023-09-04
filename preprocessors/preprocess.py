@@ -17,9 +17,10 @@ from sklearn.preprocessing import StandardScaler
 
 from config import *
 import config
-from support import LobColTemplate, Target
+from support import *
 import pickle
 from abc import abstractmethod
+from typing import Union,List
 
 
 class BasePreprocessor(object):
@@ -52,6 +53,8 @@ class BaseDataPreprocessor(BasePreprocessor):
         for other in args:
             other = _meta(other, self.scaler)
             res.append(other)
+        if len(res)==1:
+            return res[0]
         return tuple(res)
 
     def sub_illegal_punctuation(self, string):
@@ -146,6 +149,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
 
     @staticmethod
     def realized_volatility(series: pd.Series):
+        """RSS, root sum of squares?"""
         return np.sqrt(np.sum(series ** 2))
 
     @staticmethod
@@ -195,26 +199,34 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         [1] 2023-07-14_东方证券_因子选股系列之九十四：UMR2.0，风险溢价视角下的动量反转统一框架再升级.pdf
         """
         if len(features) == 0: return pd.DataFrame({
-            'risk_avg_vol': [np.nan],
+            'risk_vol_avg': [np.nan],
             'risk_ret_std': [np.nan],
             'risk_ret_skew': [np.nan],
         })
         split = 5
         H = 2
         agg_rows = step_rows = int(len(features) / split)
-        weights = cls._calc_decay_weight(split, H=2)
+        weights = cls._calc_decay_weight(split, H=H)
         _features = features.iloc[::step_rows]
         returns = _features['wap1_ret']
         # 计算风险系数risk，不同代理变量有不同计算方法
-        risk_avg_vol = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
+        # fixme 这里真的是直接减各个_features['wap1_ret']吗？而不是减对应的_features['wap1_ret'].skew()啥的？
+        # risk_vol_avg = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
+        #                _features['volume']
+        # risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).std() - \
+        #                (_features['wap1_ret']*100000)
+        # risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew() - \
+        #                 _features['wap1_ret']
+        risk_vol_avg = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
                        _features['volume']
-        risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).std() - \
+        # fixme 这里col应该是对应的std或者skew
+        risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
                        (_features['wap1_ret']*100000)
-        risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew() - \
+        risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
                         _features['wap1_ret']
 
         UMR = pd.DataFrame({
-            'risk_avg_vol': [np.sum(weights * risk_avg_vol * returns)],
+            'risk_vol_avg': [np.sum(weights * risk_vol_avg * returns)],
             'risk_ret_std': [np.sum(weights * risk_ret_std * returns)],
             'risk_ret_skew': [np.sum(weights * risk_ret_skew * returns)],
         })
@@ -389,7 +401,8 @@ class LobTimePreprocessor(BasePreprocessor):
         # self.freq = '200ms'
 
     @staticmethod
-    def del_untrade_time(df, cut_tail=True,strip=None):
+    def del_untrade_time(df:Union[pd.Series,pd.DataFrame,List[Union[pd.Series,pd.DataFrame]]], cut_tail=True,strip:str=None,
+                         drop_last_row=False):
         """
 
         Parameters
@@ -404,16 +417,39 @@ class LobTimePreprocessor(BasePreprocessor):
         -------
 
         """
-        start_time=config.important_times['continues_auction_am_start']
-        end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
-            'continues_auction_pm_end']
-        if strip is not None:
-            ...
-        a = df.loc[start_time:config.important_times['continues_auction_am_end']]
-        b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
-        temp = pd.concat([a, b], axis=0)
-        temp = temp.sort_index()
-        return temp
+
+        def _meta(df,cut_tail,strip):
+            original_date=config.date
+            current_yyyy,current_mm,current_dd=str(df.index[0].date()).split('-')
+            update_date(current_yyyy,current_mm,current_dd)
+
+            strip_timedelta = str2timedelta(strip)
+            start_time = config.important_times['continues_auction_am_start']
+            end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
+                'continues_auction_pm_end']
+            if strip is not None:
+                start_time = config.important_times['continues_auction_am_start'] + strip_timedelta
+                end_time = min(config.important_times['close_call_auction_end'] - strip_timedelta, end_time)
+            a = df.loc[start_time:config.important_times['continues_auction_am_end']]
+            b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
+            temp = pd.concat([a, b], axis=0)
+            temp = temp.sort_index()
+            if drop_last_row:
+                temp=temp.iloc[:-1]
+
+            if original_date is not None:
+                update_date(original_date[:4],original_date[4:6],original_date[6:])
+            else:
+                update_date(None,None,None)
+
+            return temp
+
+        if isinstance(df,list):
+            return [_meta(_df,cut_tail=cut_tail,strip=strip) for _df in df]
+        elif isinstance(df,pd.DataFrame) or isinstance(df,pd.Series):
+            return _meta(df,cut_tail=cut_tail,strip=strip)
+
+
 
     @staticmethod
     def add_head_tail(df, head_timestamp, tail_timestamp):
@@ -812,6 +848,20 @@ class LobFeatureEngineering(object):
     #     features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
     #     return features
 
+class ImbalancedDataPreprocessor(BaseDataPreprocessor):
+    """
+    References
+    ----------
+    [1] Werner de Vargas, V., Schneider Aranda, J.A., dos Santos Costa, R. et al. Imbalanced data preprocessing techniques for machine learning: a systematic mapping study. Knowl Inf Syst 65, 31–57 (2023). https://doi.org/10.1007/s10115-022-01772-8
+    """
+    def undersampling(self):
+        pass
+
+    def oversampling(self):
+        pass
+
+    def hybrid_sampling(self):
+        pass
 
 if __name__ == '__main__':
     pass

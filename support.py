@@ -128,18 +128,11 @@ def get_trade_details(data_root, date, symbol):
         return None
 
 
-def update_date(yyyy: Union[str,int], mm: Union[str,int], dd: Union[str,int]):
+def update_date(yyyy: Union[str, int] = None, mm: Union[str, int] = None, dd: Union[str, int] = None):
     import config
-
-    # global y
-    # global m
-    # global d
-    # global date
-    # global date1
-    # global start
-    # global end
-    # global important_times
-    # global ranges
+    if yyyy is None:
+        config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges = None, None, None, None, None, None, None, None, None
+        return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
 
     config.y = str(yyyy)
     config.m = str(mm)
@@ -160,15 +153,34 @@ def update_date(yyyy: Union[str,int], mm: Union[str,int], dd: Union[str,int]):
         'close_call_auction_start': pd.to_datetime(f'{config.date1} 14:57:00.000000'),
         'close_call_auction_end': pd.to_datetime(f'{config.date1} 15:00:00.000000'), }
 
-    config.ranges = [(pd.to_datetime(f'{config.date1} 09:30:00.000'),
-                      pd.to_datetime(f'{config.date1} 10:30:00.000') - config.min_timedelta),
+    # start=config.important_times['continues_auction_am_start']
+    # end=config.important_times['continues_auction_pm_end']
+    # if config.strip_time is not None:
+    #     start+=config.strip_timedelta
+    #     end=min(end,config.important_times['close_call_auction_end']-config.strip_timedelta)
+    # config.ranges = [(start,
+    #                   pd.to_datetime(f'{config.date1} 10:30:00.000') - config.agg_timedelta),
+    #                  (pd.to_datetime(f'{config.date1} 10:30:00.000'),
+    #                   pd.to_datetime(f'{config.date1} 11:30:00.000') - config.agg_timedelta),
+    #                  (pd.to_datetime(f'{config.date1} 13:00:00.000'),
+    #                   pd.to_datetime(f'{config.date1} 14:00:00.000') - config.agg_timedelta),
+    #                  (pd.to_datetime(f'{config.date1} 14:00:00.000'),
+    #                   end)]
+
+    start = pd.to_datetime(f'{config.date1} 09:30:00.000')
+    end = pd.to_datetime(f'{config.date1} 14:57:00.000')
+    if config.strip_time is not None:
+        start += config.strip_timedelta
+        end = min(end, pd.to_datetime(f'{config.date1} 15:00:00.000') - config.strip_timedelta)
+    config.ranges = [(start,
+                      pd.to_datetime(f'{config.date1} 10:30:00.000')),
                      (pd.to_datetime(f'{config.date1} 10:30:00.000'),
-                      pd.to_datetime(f'{config.date1} 11:30:00.000') - config.min_timedelta),
+                      pd.to_datetime(f'{config.date1} 11:30:00.000')),
                      (pd.to_datetime(f'{config.date1} 13:00:00.000'),
-                      pd.to_datetime(f'{config.date1} 14:00:00.000') - config.min_timedelta),
+                      pd.to_datetime(f'{config.date1} 14:00:00.000')),
                      (pd.to_datetime(f'{config.date1} 14:00:00.000'),
-                      pd.to_datetime(f'{config.date1} 14:57:00.000') - config.min_timedelta)]
-    # print(f"in function update to date {config.date} {config.date1}")
+                      end)]
+
     return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
 
 
@@ -177,7 +189,7 @@ def save_model(dir, filename, model):
         pickle.dump(model, f, pickle.HIGHEST_PROTOCOL)
 
 
-def extract_model_name(model) -> str:
+def get_model_name(model) -> str:
     return re.findall('\w*', str(type(model)).split('.')[-1])[0]
 
 
@@ -192,7 +204,7 @@ def __check_obedience(d: dict):
 
 def load_status(is_tick=False):
     import config
-    path='backtest/complete_status.json'
+    path = 'backtest/complete_status.json'
     if is_tick:
         path = 'backtest/complete_status_tick.json'
     with open(config.root + path, 'r', encoding='utf8') as fr:
@@ -203,11 +215,11 @@ def load_status(is_tick=False):
 
 def save_status(is_tick=False):
     import config
-    path='backtest/complete_status.json'
+    path = 'backtest/complete_status.json'
     if is_tick:
         path = 'backtest/complete_status_tick.json'
     with open(config.root + path, 'w', encoding='utf8') as fw:
-        json.dump(config.complete_status, fw, ensure_ascii=False,indent=4)
+        json.dump(config.complete_status, fw, ensure_ascii=False, indent=4)
     print("save_status", config.complete_status)
     __check_obedience(config.complete_status)
 
@@ -215,16 +227,31 @@ def save_status(is_tick=False):
 def realized_volatility(series):
     return np.sqrt(np.sum(series ** 2))
 
-def save_concat_data(data_dict,name):
+
+def save_concat_data(data_dict, name):
     import config
     with open(config.data_root + f"concat_tick_data/{name}.pkl", 'wb') as fw:
         pickle.dump(data_dict, fw, pickle.HIGHEST_PROTOCOL)
+
 
 def load_concat_data(name):
     import config
     with open(config.data_root + f"concat_tick_data/{name}.pkl", 'rb') as fr:
         data_dict = pickle.load(fr)
     return data_dict
+
+
+def str2timedelta(time_str: str, multiplier: int = None):
+    if multiplier is None: multiplier = 1
+    if time_str.endswith('min'):
+        td = timedelta(minutes=int(time_str[:-3]) * multiplier)
+    elif time_str.endswith('ms'):
+        td = timedelta(milliseconds=int(time_str[:-2]) * multiplier)
+    elif time_str.endswith('s'):
+        td = timedelta(seconds=int(time_str[:-1]) * multiplier)
+    else:
+        raise NotImplementedError("in config")
+    return td
 
 
 if __name__ == '__main__':

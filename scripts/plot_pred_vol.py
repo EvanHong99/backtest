@@ -9,15 +9,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from config import res_root
 
-stk_name='贵州茅台'
-prefix='preds/backup/'
-y_true=pd.read_csv(res_root+prefix+f'all_y_true_{stk_name}_vol.csv',index_col=0,header=0)
-y_true.columns=['y_true']
-y_pred=pd.read_csv(res_root+prefix+f'all_y_pred_{stk_name}_TabularPredictor_vol.csv',index_col=0,header=0)
-y_pred.columns=['y_pred']
+stk_name = '贵州茅台'
+mid_path = 'preds/skew_holdout0.2/'
+y_true = pd.read_csv(res_root + mid_path + f'all_y_test_{stk_name}_vol.csv', index_col=0, header=0)
+y_true.columns = ['y_true']
+y_pred = pd.read_csv(res_root + mid_path + f'all_y_pred_{stk_name}_TabularPredictor_vol.csv', index_col=0, header=0)
+y_pred.columns = ['y_pred']
 
-length=int(len(y_true)/4)
-i=0
-pd.concat([y_true,y_pred],axis=1).iloc[length*(i):length*(i+1)].plot()
-plt.show()
-plt.savefig(res_root+prefix+f'pred_{stk_name}.png',dpi=640,bbox_inches='tight')
+length = int(len(y_true) / 4)
+period = 0
+pd.concat([y_true, y_pred], axis=1).plot()
+# pd.concat([y_true, y_pred], axis=1).iloc[length * period:length * (period + 1)].plot()
+# plt.show()
+plt.savefig(res_root + mid_path + f'pred_{stk_name}.png', dpi=640, bbox_inches='tight')

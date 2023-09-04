@@ -170,18 +170,23 @@ class LobDataFeed(BaseDataFeed):
 
         self.clean_obh = pd.read_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name), index_col=0)
         self.clean_obh.index = pd.to_datetime(self.clean_obh.index)
+        self.clean_obh=self.clean_obh.sort_index()
+
         self.clean_obh = self.clean_obh.loc[:, cols]
         return self.clean_obh
 
     def load_vol_tov(self, file_root, date, stk_name):
         self.vol_tov = pd.read_csv(file_root + FILE_FMT_vol_tov.format(date, stk_name), index_col='timestamp')
         self.vol_tov.index = pd.to_datetime(self.vol_tov.index)
+        self.vol_tov=self.vol_tov.sort_index()
 
         return self.vol_tov
 
     def load_feature(self, file_root, date, stk_name,num):
-        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=0)
+        # fixme: calc feature数据有bug，tocsv后最后一行为空行，会被读进去
+        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=0,skipfooter=1)
         self.feature.index = pd.to_datetime(self.feature.index)
+        self.feature=self.feature.sort_index()
 
         return self.feature
 
