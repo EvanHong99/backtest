@@ -22,8 +22,8 @@ from tqdm import tqdm
 
 from config import *
 import config
-from preprocessors.preprocess import LobCleanObhPreprocessor
-from support import OrderTypeInt, OrderSideInt
+from preprocessors.preprocess import LobCleanObhPreprocessor, LobTimePreprocessor
+from support import OrderTypeInt, OrderSideInt, LobColTemplate
 
 
 class OrderTypeIntError(TypeError):
@@ -301,13 +301,12 @@ class OrderBook(object):
         return price
 
     def match_call_auction(self, is_open=True):
-        """
+        """ bid价格高于ask时，可以撮合，按照成交量最大原则来确定开收盘价
         todo 整合trade进来
 
         :param is_open:
         :return:
         """
-        proc_sequence = {}
         last_bid_p = -1
         last_ask_p = -1
         if is_open:
@@ -356,9 +355,10 @@ class OrderBook(object):
                                      milliseconds=10))
 
         # 计算开盘价
-        # todo:两个以上申报价格符合上述条件的，使未成交量最小的申报价格为成交价格；这一条好像没有作用
+        # fixme:两个以上申报价格符合上述条件的，使未成交量最小的申报价格为成交价格；这一条好像没有作用
         if self.get_best_ask() != last_ask_p and self.get_best_bid() != last_bid_p:  # 仍有两个以上使未成交量最小的申报价格符合上述条件的，其中间价为成交价格。
-            new_p = (self.get_best_ask() + self.get_best_bid()) / 2
+            # new_p = (self.get_best_ask() + self.get_best_bid()) / 2
+            new_p = np.round_((last_ask_p + last_bid_p) / 2, 2) + 0.01
         elif self.get_best_ask() != last_ask_p:
             new_p = self.get_best_bid()
         elif self.get_best_bid() != last_bid_p:
@@ -698,10 +698,45 @@ class OrderBook(object):
         window: window档盘口数据
         """
         # logging.warning(str(self.__snapshot)+" is deprecated",DeprecationWarning)
+        price_gap=0.01 # 如果买卖价位档位不足，用price gap形成的虚拟价位档进行填充
         window_bid = min(len(self.pv_dict_bid.keys()), window)
         window_ask = min(len(self.pv_dict_ask.keys()), window)
-        p_v = {k: v for k, v in self.pv_dict_bid.items()[-window_bid:]}
+        # 必须按照以下四块顺序，以保证obh columns递增，防止和旧版本发生冲突
+        p_v={}
+        if window_bid<window: # 买价不足window档
+            gap=window-window_bid
+            if window_bid==0:
+                edge_price = list(self.pv_dict_ask.keys())[0]
+            else:
+                edge_price=list(self.pv_dict_bid.keys())[-window_bid]
+            # np.arange(0.07,0.00,-0.01)
+            # Out[48]: array([0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.  ])
+            # new={np.round(edge_price-i,decimals=2):0 for i in np.arange(np.round(price_gap*gap,decimals=2),0,-price_gap)}
+            # if gap==7:
+            #     new = {np.round(edge_price - i, decimals=2): 0 for i in
+            #            np.arange(np.round(price_gap * gap, decimals=2), 0, -price_gap)[:-1]}
+            new={np.round(edge_price-i,decimals=2):0 for i in np.array(list(range(gap,0,-1)))/100}
+            p_v.update(new)
+        p_v.update({k: v for k, v in self.pv_dict_bid.items()[-window_bid:]})
         p_v.update({k: v for k, v in self.pv_dict_ask.items()[:window_ask]})
+        if window_ask<window: # 卖价不足window档
+            gap=window-window_ask
+            if window_ask==0:
+                edge_price = list(self.pv_dict_bid.keys())[-1]
+            else:
+                edge_price=list(self.pv_dict_ask.keys())[window_ask - 1]
+            # np.arange(0.01,0.08,0.01)
+            # Out[30]: array([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08])
+            # new = {np.round(edge_price + i, decimals=2): 0 for i in
+            #        np.arange(price_gap, np.round(price_gap * (gap + 1), decimals=2), price_gap)}
+            # if gap==7:
+            #     new = {np.round(edge_price + i, decimals=2): 0 for i in
+            #            np.arange(price_gap, np.round(price_gap * (gap + 1), decimals=2), price_gap)[:-1]}
+            new = {np.round(edge_price + i, decimals=2): 0 for i in np.array(list(range(1, gap + 1, 1)))/100}
+            p_v.update(new)
+        if len(p_v)!=2*window:
+            a=0
+            a=a+1
         self.order_book_history_dict[timestamp] = p_v
 
     def get_trade_details(self, last_n=0):
@@ -778,35 +813,46 @@ class OrderBook(object):
         """
         # 最后将order_book_history的列（价格），按照降序排列
 
-        self.order_book_history = pd.DataFrame(self.order_book_history_dict)
-        self.order_book_history = self.order_book_history.sort_index(ascending=False).T
+        # self.order_book_history = pd.DataFrame(self.order_book_history_dict)
+        # self.order_book_history = self.order_book_history.sort_index(ascending=False).T
         # self.order_book_history1 = pd.DataFrame(self.order_book_history_dict1)
         # self.order_book_history1 = self.order_book_history1.sort_index(ascending=False).T
 
 
         self.price_history = pd.DataFrame(self.price_history_dict)
         self.price_history = self.price_history.T
-        self.price_history = self.price_history.sort_index(ascending=True)
+        self.price_history = self.price_history.sort_index(ascending=True).set_index('timestamp')[
+            'current'].rename('current').groupby(level=0).last()
 
-        self.clean_obh = self._gen_clean_obh()
+        self.clean_obh = self._gen_clean_obh(self.order_book_history_dict,self.price_history,self.snapshot_window)
 
-    def _gen_clean_obh(self):
+    def _gen_clean_obh(self,order_book_history_dict,price_history,snapshot_window):
         """
 
         :return:
         """
-        assert len(self.order_book_history) > 0
-        obh = self.order_book_history
-        try:
-            obh.index = pd.to_datetime(obh.index)
-        except:
-            obh = obh.T
-            obh.index = pd.to_datetime(obh.index)
-        obh = obh.sort_index(ascending=True)
-        obh.columns = obh.columns.astype(float)
-        obh_v = LobCleanObhPreprocessor.split_volume(obh)
-        obh_p = LobCleanObhPreprocessor.split_price(obh)
-        clean_obh = pd.concat([obh_p, obh_v], axis=1).ffill()
+        # assert len(self.order_book_history) > 0
+        # obh = self.order_book_history
+        # try:
+        #     obh.index = pd.to_datetime(obh.index)
+        # except:
+        #     obh = obh.T
+        #     obh.index = pd.to_datetime(obh.index)
+        # obh = obh.sort_index(ascending=True)
+        # obh.columns = obh.columns.astype(float)
+        # obh_v1 = LobCleanObhPreprocessor.split_volume(obh,window_size=snapshot_window)
+        # obh_p1 = LobCleanObhPreprocessor.split_price(obh,window_size=snapshot_window)
+        obh_v,obh_p=LobCleanObhPreprocessor.split_volume_price(order_book_history_dict,window_size=snapshot_window)
+        mid_p = (obh_p[str(LobColTemplate('a', 1, 'p'))] + obh_p[str(LobColTemplate('a', 1, 'p'))]).rename('mid_p') / 2
+
+        clean_obh = pd.concat([obh_p, obh_v, price_history, mid_p], axis=1).ffill().bfill()
+        clean_obh.index = pd.to_datetime(clean_obh.index)
+        clean_obh = LobTimePreprocessor.del_untrade_time(clean_obh, cut_tail=True)
+        clean_obh = LobTimePreprocessor.add_head_tail(clean_obh,
+                                                      head_timestamp=config.important_times[
+                                                          'continues_auction_am_start'],
+                                                      tail_timestamp=config.important_times['continues_auction_pm_end'])
+
         return clean_obh
 
     def _exception_cleanup(self):

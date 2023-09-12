@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from config import res_root
 
 stk_name = '贵州茅台'
-mid_path = 'preds/skew_holdout0.2/'
+mid_path = '波动率预测/preds/skew_holdout0.2/'
 y_true = pd.read_csv(res_root + mid_path + f'all_y_test_{stk_name}_vol.csv', index_col=0, header=0)
 y_true.columns = ['y_true']
 y_pred = pd.read_csv(res_root + mid_path + f'all_y_pred_{stk_name}_TabularPredictor_vol.csv', index_col=0, header=0)

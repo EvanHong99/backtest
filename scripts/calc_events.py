@@ -54,7 +54,7 @@ def calc_events(trade_details,order_details):
 
     events = pd.concat([order_events, trade_events], axis=0).fillna(0).sort_index()
     events = events.set_index('timestamp').sort_index()
-    events = LobTimePreprocessor.del_untrade_time(events.sort_index(), cut_tail=False)
+    events = LobTimePreprocessor.del_untrade_time(events.sort_index(), cut_tail=False,strip=None)
     events = events.groupby(level=0).sum()
     return events
 

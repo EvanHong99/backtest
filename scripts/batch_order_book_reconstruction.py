@@ -26,11 +26,13 @@ if __name__ == '__main__':
     load_status()
     y, m = '2022', '06'
     for stk_name in list(code_dict.keys())[skip:limit]:
-        if stk_name in exclude: continue
-        if stk_name in config.complete_status['orderbooks']:continue
-        for dd in [23, 28, 29]:
+    # for stk_name in ['包钢股份'][skip:limit]:
+        if stk_name not in exclude: continue
+        # if stk_name in config.complete_status['orderbooks']:continue
+        # for dd in [23, 28, 29]:
+        for dd in [23]:
             config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges = update_date(
-                y, m, str(dd))
+            y, m, str(dd))
             y, m, d, date, date1, start, end, important_times, ranges = config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
             print(f"update to date {date} {date1}")
 
@@ -39,27 +41,30 @@ if __name__ == '__main__':
             symbol = code_dict[stk_name]
             order_details = get_order_details(data_root, date, symbol)
             trade_details = get_trade_details(data_root, date, symbol)
+            print(stk_name,len(order_details),len(trade_details))
+            # continue
 
             self = OrderBook(stk_name, symbol, snapshot_window=snapshot_window)
             self.reconstruct(order_details, trade_details)
-
             self.check_trade_details(trade_details)
             self.events = calc_events(trade_details, order_details)
 
             self.price_history.to_csv(detail_data_root + FILE_FMT_price_history.format(date, stk_name), index=False)
-            self.order_book_history.to_csv(detail_data_root + FILE_FMT_order_book_history.format(date, stk_name))
             self.my_trade_details.to_csv(detail_data_root + FILE_FMT_my_trade_details.format(date, stk_name),
                                          index=False)
             self.vol_tov.to_csv(detail_data_root + FILE_FMT_vol_tov.format(date, stk_name), index=True)
             self.events.to_csv(detail_data_root + FILE_FMT_events.format(date, stk_name))
-
-            datafeed = LobDataFeed(detail_data_root, date, stk_name=stk_name)
-            datafeed.load_basic(detail_data_root, date, stk_name=stk_name)
-            cobh_pp = LobCleanObhPreprocessor()
-            cobh_pp.gen_and_save(datafeed, detail_data_root, date, stk_name=stk_name, snapshot_window=snapshot_window)
+            # datafeed = LobDataFeed(detail_data_root, date, stk_name=stk_name)
+            # datafeed.load_basic(detail_data_root, date, stk_name=stk_name)
+            # cobh_pp = LobCleanObhPreprocessor()
+            # cobh_pp.gen_and_save(datafeed, detail_data_root, date, stk_name=stk_name, snapshot_window=snapshot_window)
+            self.clean_obh.to_csv(detail_data_root + FILE_FMT_clean_obh.format(date, stk_name))
+            # self.order_book_history.to_csv(detail_data_root + FILE_FMT_order_book_history.format(date, stk_name))
+            with open(detail_data_root + FILE_FMT_order_book_history_dict.format(date, stk_name),'wb') as fw:
+                pickle.dump(self.order_book_history_dict,fw)
 
             print(f"finish {stk_name} {date}")
 
             # pd.concat([trade_details['price'].reset_index()['price'].rename('ground_truth'),self.my_trade_details['price'].rename('recnstr')],axis=1).plot(title=stk_names).get_figure().savefig(res_root+f'current_{stk_names}.png',dpi=1200,bbox_inches='tight')
-        config.complete_status['orderbooks'].append(stk_name)
-        save_status()
+        # config.complete_status['orderbooks'].append(stk_name)
+        # save_status()

@@ -34,6 +34,20 @@ class OrderTypeInt(Enum):
     best_own = 85  # 本⽅最优
     bop = 85  # 本⽅最优
 
+def fill_zero(symbol:str):
+    """可能从csv中读的数据symbol并不是读成str，那就会导致需要补0。比如海通买的每日更新的权重数据
+
+    Parameters
+    ----------
+    symbol
+
+    Returns
+    -------
+
+    """
+    if len(symbol)<6:
+        return '0'*(6-len(symbol))+symbol
+    else: return symbol
 
 class Target(Enum):
     """

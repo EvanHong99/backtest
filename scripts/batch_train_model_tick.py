@@ -490,6 +490,7 @@ if __name__ == '__main__':
             save_model(model_root, FILE_FMT_model.format(mname, num, get_model_name(model)), model)
 
 
+            res_root=res_root+'波动率预测/'
             if not os.path.exists(res_root+'stats/'+mid_path):
                 os.mkdir(res_root+'stats/'+mid_path)
             if not os.path.exists(res_root + 'preds/' + mid_path):

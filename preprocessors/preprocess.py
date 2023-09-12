@@ -333,10 +333,10 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         :return:
         """
 
-        def meta(row: pd.Series):
+        def _meta(row: pd.Series):
             return row.dropna().values
 
-        temp = pd.DataFrame(order_book_history.apply(lambda x: meta(x), axis=1, result_type="expand"))
+        temp = pd.DataFrame(order_book_history.apply(lambda x: _meta(x), axis=1, result_type="expand"))
         origin_level = int(temp.shape[1] / 2)
         temp.columns = [f'a{i}_v' for i in range(origin_level, 0, -1)] + [f'b{i}_v' for i in range(1, origin_level + 1)]
         if window_size == -1:
@@ -348,44 +348,75 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         return temp
 
     @staticmethod
-    def _gen_clean_obh(datafeed, snapshot_window):
+    def split_volume_price(order_book_history_dict: dict, window_size=-1):
         """
+        将order_book_history_dict分解为vol_df,price_df
+        Parameters
+        ----------
+        order_book_history_dict
+        window_size
 
-        :return:
+        Returns
+        -------
+
         """
-        order_book_history = datafeed.order_book_history
-        current = datafeed.current
-        assert len(order_book_history) > 0
-        obh = order_book_history
-        try:
-            obh.index = pd.to_datetime(obh.index)
-        except:
-            obh = obh.T
-            obh.index = pd.to_datetime(obh.index)
-        obh = obh.sort_index(ascending=True)
-        obh.columns = obh.columns.astype(float)
-        obh_v = LobCleanObhPreprocessor.split_volume(obh, window_size=snapshot_window)
-        obh_p = LobCleanObhPreprocessor.split_price(obh, window_size=snapshot_window)
-        mid_p = (obh_p[str(LobColTemplate('a', 1, 'p'))] + obh_p[str(LobColTemplate('a', 1, 'p'))]).rename('mid_p') / 2
+        if window_size == -1:
+            window_size = len(list(order_book_history_dict.values())[0])
+        volumes = [f'a{i}_v' for i in range(window_size, 0, -1)] + [f'b{i}_v' for i in range(1, window_size + 1)]
+        prices = [f'a{i}_p' for i in range(window_size, 0, -1)] + [f'b{i}_p' for i in range(1, window_size + 1)]
+        # order_book_history_dict={k: {for kk in order_book_history_dict[k].keys()} for k in order_book_history_dict.items()}
+        vol_dict={k:[vv for vv in v.values()] for k,v in order_book_history_dict.items()}
+        price_dict={k:[vv for vv in v.keys()] for k,v in order_book_history_dict.items()}
+        vol_df=pd.DataFrame.from_dict(vol_dict,orient='index')
+        price_df=pd.DataFrame.from_dict(price_dict,orient='index')
+        # 转置成价格从高到低
+        vol_df=vol_df.loc[:,vol_df.columns[::-1]]
+        price_df=price_df.loc[:,price_df.columns[::-1]]
+        vol_df.columns=volumes
+        price_df.columns=prices
+        return vol_df,price_df
 
-        clean_obh = pd.concat([obh_p, obh_v, current, mid_p], axis=1).ffill().bfill()
-        clean_obh.index = pd.to_datetime(clean_obh.index)
-        clean_obh = LobTimePreprocessor.del_untrade_time(clean_obh, cut_tail=True)
-        clean_obh = LobTimePreprocessor.add_head_tail(clean_obh,
-                                                      head_timestamp=config.important_times[
-                                                          'continues_auction_am_start'],
-                                                      tail_timestamp=config.important_times['continues_auction_pm_end'])
 
-        return clean_obh
+    # @staticmethod
+    # def _gen_clean_obh(datafeed, snapshot_window):
+    #     """
+    #
+    #     :return:
+    #     """
+    #     # order_book_history = datafeed.order_book_history
+    #     # assert len(order_book_history) > 0
+    #     # obh = order_book_history
+    #     # try:
+    #     #     obh.index = pd.to_datetime(obh.index)
+    #     # except:
+    #     #     obh = obh.T
+    #     #     obh.index = pd.to_datetime(obh.index)
+    #     # obh = obh.sort_index(ascending=True)
+    #     # obh.columns = obh.columns.astype(float)
+    #     # obh_v = LobCleanObhPreprocessor.split_volume(obh, window_size=snapshot_window)
+    #     # obh_p = LobCleanObhPreprocessor.split_price(obh, window_size=snapshot_window)
+    #     obh_p,obh_v=LobCleanObhPreprocessor.split_volume_price()
+    #     current = datafeed.current
+    #     mid_p = (obh_p[str(LobColTemplate('a', 1, 'p'))] + obh_p[str(LobColTemplate('a', 1, 'p'))]).rename('mid_p') / 2
+    #
+    #     clean_obh = pd.concat([obh_p, obh_v, current, mid_p], axis=1).ffill().bfill()
+    #     clean_obh.index = pd.to_datetime(clean_obh.index)
+    #     clean_obh = LobTimePreprocessor.del_untrade_time(clean_obh, cut_tail=True)
+    #     clean_obh = LobTimePreprocessor.add_head_tail(clean_obh,
+    #                                                   head_timestamp=config.important_times[
+    #                                                       'continues_auction_am_start'],
+    #                                                   tail_timestamp=config.important_times['continues_auction_pm_end'])
+    #
+    #     return clean_obh
 
-    @staticmethod
-    def save_clean_obh(clean_obh, file_root, date, stk_name):
-        clean_obh.to_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name))
-
-    @staticmethod
-    def gen_and_save(datafeed, save_root, date: str, stk_name: str, snapshot_window):
-        clean_obh = LobCleanObhPreprocessor._gen_clean_obh(datafeed, snapshot_window)
-        LobCleanObhPreprocessor.save_clean_obh(clean_obh, save_root, date, stk_name)
+    # @staticmethod
+    # def save_clean_obh(clean_obh, file_root, date, stk_name):
+    #     clean_obh.to_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name))
+    #
+    # @staticmethod
+    # def gen_and_save(datafeed, save_root, date: str, stk_name: str, snapshot_window):
+    #     clean_obh = LobCleanObhPreprocessor._gen_clean_obh(datafeed, snapshot_window)
+    #     LobCleanObhPreprocessor.save_clean_obh(clean_obh, save_root, date, stk_name)
 
     def run_batch(self):
         """
@@ -423,11 +454,11 @@ class LobTimePreprocessor(BasePreprocessor):
             current_yyyy,current_mm,current_dd=str(df.index[0].date()).split('-')
             update_date(current_yyyy,current_mm,current_dd)
 
-            strip_timedelta = str2timedelta(strip)
             start_time = config.important_times['continues_auction_am_start']
             end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
                 'continues_auction_pm_end']
             if strip is not None:
+                strip_timedelta = str2timedelta(strip)
                 start_time = config.important_times['continues_auction_am_start'] + strip_timedelta
                 end_time = min(config.important_times['close_call_auction_end'] - strip_timedelta, end_time)
             a = df.loc[start_time:config.important_times['continues_auction_am_end']]

@@ -93,7 +93,7 @@ code_dict = {
 }
 complete_status={}
 stk_name_dict = {v: k for k, v in code_dict.items()}
-exclude=['海天味业','航发动力','包钢股份','闻泰科技','长城汽车','中信建投']
+exclude=['闻泰科技','长城汽车','中信建投']
 # exclude=['紫金矿业','工商银行','中国建筑','中国石化']
 
 
@@ -106,6 +106,7 @@ model_root = root + 'models/'
 scaler_root = root + 'scalers/'
 
 FILE_FMT_order_book_history = "{}_{}_order_book_history.csv"  # 默认买卖各10档
+FILE_FMT_order_book_history_dict = "{}_{}_order_book_history.pkl"  # 默认买卖各10档
 FILE_FMT_price_history = "{}_{}_price_history.csv"
 FILE_FMT_clean_obh = "{}_{}_clean_obh.csv"  # 默认买卖各5档
 FILE_FMT_my_trade_details = "{}_{}_my_trade_details.csv"
