@@ -171,6 +171,7 @@ class LobBackTester(BaseTester):
         fe = LobFeatureEngineering()
         df = df.groupby(level=0).last()
         feature = fe.generate_cross_section(df, level=level)
+        feature=feature.dropna(how='all')
         feature = pd.concat([df, feature], axis=1)
         feature.index = pd.to_datetime(feature.index)
         feature = feature.sort_index()
@@ -193,8 +194,7 @@ class LobBackTester(BaseTester):
         alldatas = [ltp.add_head_tail(cobh, head_timestamp=pd.to_datetime(s),
                                       tail_timestamp=pd.to_datetime(e)) for cobh, (s, e) in
                     zip(alldatas, config.ranges)]
-        self.features = [self._calc_features(data, level=level, to_freq=to_freq) for data in
-                         alldatas]  # 尚未agg
+        self.features = [self._calc_features(data, level=level, to_freq=to_freq) for data in alldatas]  # 尚未agg
         self.features = [ltp.add_head_tail(feature, head_timestamp=pd.to_datetime(s),
                                            tail_timestamp=pd.to_datetime(e)) for feature, (s, e) in
                          zip(self.features, config.ranges)]
@@ -364,7 +364,7 @@ class LobBackTester(BaseTester):
                                                                                   str(LobColTemplate().current)])
                 temp = self.alldata[config.date][stk_name].asfreq(freq=min_freq, method='ffill')
                 shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
-                # todo 以一段时间的平均ret作为target
+
                 if config.target == Target.mid_p_ret.name:
                     tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
                     tar = np.log(tar / tar.shift(shift_rows))  # log ret

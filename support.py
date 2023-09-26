@@ -5,8 +5,8 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
-
-
+import datetime
+import os.path
 import re
 from enum import Enum
 
@@ -69,6 +69,7 @@ class Target(Enum):
     vol = 2  # middle price realized volatility
     wap_ret = 3
     wap_vol = 4
+    vol_chg=5 # 波动率的变化方向
 
 
 class LobColTemplate(object):
@@ -148,9 +149,15 @@ def update_date(yyyy: Union[str, int] = None, mm: Union[str, int] = None, dd: Un
         config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges = None, None, None, None, None, None, None, None, None
         return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
 
-    config.y = str(yyyy)
-    config.m = str(mm)
-    config.d = str(dd)
+    yyyy = str(yyyy)
+    mm = str(mm)
+    dd = str(dd)
+    mm = '0'+mm if len(mm)==1 else mm
+    dd = '0'+dd if len(dd)==1 else dd
+
+    config.y = yyyy
+    config.m = mm
+    config.d = dd
 
     config.date = f'{config.y}{config.m}{config.d}'
     config.date1 = f'{config.y}-{config.m}-{config.d}'
@@ -234,28 +241,33 @@ def save_status(is_tick=False):
         path = 'backtest/complete_status_tick.json'
     with open(config.root + path, 'w', encoding='utf8') as fw:
         json.dump(config.complete_status, fw, ensure_ascii=False, indent=4)
-    print("save_status", config.complete_status)
-    __check_obedience(config.complete_status)
+    # print("save_status", config.complete_status)
+    # __check_obedience(config.complete_status)
 
 
 def realized_volatility(series):
     return np.sqrt(np.sum(series ** 2))
 
 
-def save_concat_data(data_dict, name):
-    import config
-    with open(config.data_root + f"concat_tick_data/{name}.pkl", 'wb') as fw:
+def save_concat_data(data_dict, name,mid_path):
+    import backtest.config as config
+    if not mid_path.endswith('/'):
+        mid_path+='/'
+    if not os.path.exists(config.data_root + mid_path):
+        os.mkdir(config.data_root + mid_path)
+    with open(config.data_root +mid_path+ f"{name}.pkl", 'wb') as fw:
         pickle.dump(data_dict, fw, pickle.HIGHEST_PROTOCOL)
 
 
-def load_concat_data(name):
-    import config
-    with open(config.data_root + f"concat_tick_data/{name}.pkl", 'rb') as fr:
+def load_concat_data(name,mid_path):
+    import pickle
+    import backtest.config as config
+    with open(config.data_root + mid_path+ f"{name}.pkl", 'rb') as fr:
         data_dict = pickle.load(fr)
     return data_dict
 
 
-def str2timedelta(time_str: str, multiplier: int = None):
+def str2timedelta(time_str: str, multiplier: int = None)->datetime.timedelta:
     if multiplier is None: multiplier = 1
     if time_str.endswith('min'):
         td = timedelta(minutes=int(time_str[:-3]) * multiplier)

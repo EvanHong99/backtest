@@ -627,7 +627,6 @@ class OrderBook(object):
 
         return current
 
-    # testit
     def match_continues_auction(self, order):
         """
         .. [#]: 上交所
@@ -876,7 +875,6 @@ class OrderBook(object):
         #     res = pd.concat([head.to_frame().T, res]).head(10)
         return vol_tov
 
-    # testit
     def reconstruct(self, order_details, trade_details):
         order = None
         DEBUG = False

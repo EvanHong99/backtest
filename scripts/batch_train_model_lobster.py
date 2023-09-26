@@ -89,7 +89,6 @@ if __name__ == '__main__':
                                                      str(LobColTemplate('b', 1, 'p'))])
             temp = temp.groupby(level=0).last().resample('10ms').last().sort_index().ffill().bfill()
             shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
-            # todo 以一段时间的平均ret作为target
             if config.target == Target.mid_p_ret.name:
                 tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
                 tar = np.log(tar / tar.shift(shift_rows))  # log ret
@@ -118,8 +117,6 @@ if __name__ == '__main__':
                 X_train_dict[stk_name][num] = pd.concat([X_train_dict[stk_name][num], X], axis=0)
                 y_train_dict[stk_name][num] = pd.concat([y_train_dict[stk_name][num].rename(config.target), y], axis=0)
     # test data
-    # note: do not delete
-    #  todo:该阶段（train scaler and model）不需要test的数据，但在之后完整的backtest时仍旧需要用到该段代码
     X_test_dict = defaultdict(lambda: defaultdict(pd.DataFrame))
     y_test_dict = defaultdict(lambda: defaultdict(pd.Series))
     for ymd, stk_data in list(data_dict.items())[train_len:]:
@@ -149,7 +146,7 @@ if __name__ == '__main__':
         config.complete_status['scalers'].append(stk_name)
         save_status()
 
-    # gather different stk data todo: 不同股票不同模型
+    # gather different stk data
     all_X_train = defaultdict(pd.DataFrame)
     all_y_train = defaultdict(pd.Series)
     all_X_test = defaultdict(pd.DataFrame)

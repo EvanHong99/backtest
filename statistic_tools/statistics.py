@@ -5,8 +5,10 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
+from typing import Union
+
 import pandas as pd
-from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score,accuracy_score,classification_report
 import numpy as np
 
 import config
@@ -28,26 +30,35 @@ class LobStatistics(BaseStatistics):
         pass  # Generate report based on records from observer
 
     @staticmethod
-    def stat_pred_error(y_true, y_pred, name='stat')->pd.Series:
-        if config.target==Target.vol.name:
-            y_true_mean=y_true.abs().mean()
-            return pd.Series({'baseline_mae': np.mean(np.abs(y_true.abs()-y_true_mean)),
-                              'baseline_rmse': np.sqrt(np.square(y_true-y_true_mean).sum()),
-                              'mae': mean_absolute_error(y_true, y_pred),
-                              'mse': mean_squared_error(y_true, y_pred),
-                              'rmse': mean_squared_error(y_true, y_pred, squared=False),
-                              'r2_score': r2_score(y_true, y_pred),
-                              'explained_variance_score': explained_variance_score(y_true, y_pred)},
-                             name=name)
-        else:
-            return pd.Series({'baseline_mae': y_true.abs().mean(),
-                              'baseline_rmse': np.sqrt(np.square(y_true).sum()),
-                              'mae': mean_absolute_error(y_true, y_pred),
-                              'mse': mean_squared_error(y_true, y_pred),
-                              'rmse': mean_squared_error(y_true, y_pred, squared=False),
-                              'r2_score': r2_score(y_true, y_pred),
-                              'explained_variance_score': explained_variance_score(y_true, y_pred)},
-                             name=name)
+    def stat_pred_error(y_true, y_pred, name='stat',task='regression')->Union[pd.Series,pd.DataFrame]:
+        if task=='regression':
+            if config.target==Target.vol.name:
+                y_true_mean=y_true.abs().mean()
+                return pd.Series({'baseline_mae': np.mean(np.abs(y_true.abs()-y_true_mean)),
+                                  'baseline_rmse': np.sqrt(np.square(y_true-y_true_mean).sum()),
+                                  'mae': mean_absolute_error(y_true, y_pred),
+                                  'mse': mean_squared_error(y_true, y_pred),
+                                  'rmse': mean_squared_error(y_true, y_pred, squared=False),
+                                  'r2_score': r2_score(y_true, y_pred),
+                                  'explained_variance_score': explained_variance_score(y_true, y_pred)},
+                                 name=name)
+            else:
+                return pd.Series({'baseline_mae': y_true.abs().mean(),
+                                  'baseline_rmse': np.sqrt(np.square(y_true).sum()),
+                                  'mae': mean_absolute_error(y_true, y_pred),
+                                  'mse': mean_squared_error(y_true, y_pred),
+                                  'rmse': mean_squared_error(y_true, y_pred, squared=False),
+                                  'r2_score': r2_score(y_true, y_pred),
+                                  'explained_variance_score': explained_variance_score(y_true, y_pred)},
+                                 name=name)
+        elif task=='binary':
+            res=classification_report(y_true,y_pred,output_dict=True)
+            res['accuracy'] = {'f1-score': res['accuracy'], 'support': res['macro avg']['support']}
+            res=pd.DataFrame.from_dict(res).T
+            res.columns=pd.MultiIndex.from_tuples([(name,col) for col in res.columns])
+            return res
+        else: raise NotImplementedError
+
 
     @staticmethod
     def stat_winrate(ret: pd.Series, signals, counterpart: bool, params=None):
@@ -91,7 +102,12 @@ class LobStatistics(BaseStatistics):
 
     @classmethod
     def stat_pred_performance(cls):
-        # todo
+        """
+        统计回测胜率、单次盈亏等
+        Returns
+        -------
+
+        """
         all_stats = pd.DataFrame()
         all_stats_winrate = pd.DataFrame()
         for num, (X_test, y_test, model) in enumerate(zip(self.Xs, self.ys, self.models)):

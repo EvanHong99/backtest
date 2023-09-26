@@ -113,7 +113,6 @@ if __name__ == '__main__':
             temp = temp.groupby(level=0).last().resample('10ms').last().sort_index().ffill()
             wap1 = wap1.groupby(level=0).last().resample('10ms').last().sort_index().ffill()
             shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
-            # todo 以一段时间的平均ret作为target
             if config.target == Target.mid_p_ret.name:
                 tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
                 tar = np.log(tar / tar.shift(shift_rows))  # log ret
@@ -164,7 +163,7 @@ if __name__ == '__main__':
                 X_test_dict[stk_name][num] = pd.concat([X_test_dict[stk_name][num], X], axis=0)
                 y_test_dict[stk_name][num] = pd.concat([y_test_dict[stk_name][num].rename(config.target), y], axis=0)
 
-    # todo 法2：shuffle后按比例划分
+    # 法2：shuffle后按比例划分
     ...
 
     # scale X data and save scaler
@@ -180,7 +179,7 @@ if __name__ == '__main__':
         config.complete_status['scalers'] = list(set(config.complete_status['scalers']))
         save_status()
 
-    # # gather different stk data todo: 不同股票不同模型
+    # # gather different stk data
     # all_X_train = defaultdict(pd.DataFrame)
     # all_y_train = defaultdict(pd.Series)
     # all_X_test = defaultdict(pd.DataFrame)
@@ -352,4 +351,3 @@ if __name__ == '__main__':
         all_y_pred_trunc.to_csv(
             res_root + f"preds/all_y_pred_trunc_{stk_name}_{get_model_name(model)}_{config.target}.csv")
         all_y_true.to_csv(res_root + f"preds/all_y_true_{stk_name}_{config.target}.csv")
-# todo 数据量太少

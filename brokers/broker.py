@@ -263,7 +263,7 @@ class Broker(BaseBroker):
         action = signal['action']
         seq = signal['seq']
 
-        if type == OrderTypeInt.market.value:  # 市价单，todo 最优五档？？？
+        if type == OrderTypeInt.market.value:  # 市价单，fixme 最优五档？？？
             if side == 1:  # for long order
                 pass
             elif side == -1:  # for short order
@@ -333,8 +333,7 @@ class Broker(BaseBroker):
     def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None):
         """
         批量执行指令，无法画出净值曲线
-        todo commission
-        Note
+
         ----
         需要提前使用Broker.load_data()函数买卖量价信息历史（至少1档）存于Broker.clean_obh_dict <{date:{stk_name:ret <pd.DataFrame>}}>
 
@@ -343,7 +342,7 @@ class Broker(BaseBroker):
         signals : pd.DataFrame
             columes: [timestamp	side	type	price_limit	volume	stk_name	action	seq]
             stk_name+seq用于唯一识别一次交易，可以有open和close两种actions，side==1<->long，side==-1<->short，side==0<->no action（优先级高于action）
-            todo: type为订单类型，服从米筐订单类型定义，如limit order / market order，具体查看support.OrderTypeInt
+            type为订单类型，服从米筐订单类型定义，如limit order / market order，具体查看support.OrderTypeInt。todo: 更加通用化的type表示形式
         use_dates: list of str
             回测日期
         use_stk_names: list of str
@@ -523,7 +522,6 @@ class Broker(BaseBroker):
     #
     # def run(self):
     #     """
-    #     todo 手续费，中间价，时间拉长，看论文
     #
     #     :return:
     #     """

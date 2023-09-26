@@ -20,7 +20,7 @@ import config
 from support import *
 import pickle
 from abc import abstractmethod
-from typing import Union,List
+from typing import Union, List
 
 
 class BasePreprocessor(object):
@@ -53,7 +53,7 @@ class BaseDataPreprocessor(BasePreprocessor):
         for other in args:
             other = _meta(other, self.scaler)
             res.append(other)
-        if len(res)==1:
+        if len(res) == 1:
             return res[0]
         return tuple(res)
 
@@ -109,7 +109,6 @@ class ShiftDataPreprocessor(BaseDataPreprocessor):
 
     @staticmethod
     def shift_X(X, use_n_steps):
-        # todo 把该处理单独做函数
         XX = pd.concat(
             [X.shift(i).rename(columns={col: col + f'_lag{i}' for col in X.columns}) for i in
              range(use_n_steps)],
@@ -148,8 +147,44 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         super().__init__(*args, **kwargs)
 
     @staticmethod
+    def calc_realized_volatility(series: pd.Series,**kwargs):
+        """annualized realized volatility
+        realized volatility和ret序列的std不一样在于，std是减去ret的均值，而realized volatility可以看做是减去0
+
+        Notes
+        -----
+        分母采用样本大小-1，即样本realized volatility
+
+        Parameters
+        ----------
+        series
+
+        Returns
+        -------
+
+        References
+        ----------
+        [1] https://www.realvol.com/VolFormula.htm
+        [2] https://vinsight.shnyu.edu.cn/about_volatility.php
+        """
+        # assert (series>=0).values.all() # 已在外部代码保证这一点，出于效率考虑，暂时注释该行
+
+        # if kwargs.get('n') is None:
+        #     # freq = series.index.freq
+        #     logging.warning('AggDataPreprocessor.calc_realized_volatility: freq is none')
+        #     freq=(series.index[1:] - series.index[:-1]).median()
+        #     n=252*4*60*60/freq.seconds
+        # else:
+        #     n=kwargs['n']
+        n = 1
+        temp = series.dropna()
+        res = pd.Series(data=[np.sqrt(np.matmul(temp.T, temp) / (len(temp) - 1)*n)], index=[series.index[-1]])
+        return res
+
+    @staticmethod
     def realized_volatility(series: pd.Series):
         """RSS, root sum of squares?"""
+        raise DeprecationWarning('realized_volatility')
         return np.sqrt(np.sum(series ** 2))
 
     @staticmethod
@@ -180,8 +215,8 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         return weights
 
     @classmethod
-    def momentum_UMR(cls,features: pd.DataFrame):
-        """
+    def momentum_UMR(cls, features: pd.DataFrame):
+        """对原算法进行了简化，去掉了return的部分
 
         Parameters
         ----------
@@ -200,39 +235,38 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         """
         if len(features) == 0: return pd.DataFrame({
             'risk_vol_avg': [np.nan],
+            'risk_vol_std': [np.nan],
             'risk_ret_std': [np.nan],
             'risk_ret_skew': [np.nan],
         })
-        split = 5
+        split = 5 # 分为n等分，计算风险调整加权收益
         H = 2
         agg_rows = step_rows = int(len(features) / split)
-        weights = cls._calc_decay_weight(split, H=H)
-        _features = features.iloc[::step_rows]
-        returns = _features['wap1_ret']
+        weights = cls._calc_decay_weight(split - 1, H=H)  # 最后一个frame不需要加权
+        # _features = features.iloc[::step_rows]
+        # returns = _features['wap1_ret']
         # 计算风险系数risk，不同代理变量有不同计算方法
-        # fixme 这里真的是直接减各个_features['wap1_ret']吗？而不是减对应的_features['wap1_ret'].skew()啥的？
         # risk_vol_avg = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
         #                _features['volume']
         # risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).std() - \
         #                (_features['wap1_ret']*100000)
         # risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew() - \
         #                 _features['wap1_ret']
-        risk_vol_avg = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
-                       _features['volume']
-        # fixme 这里col应该是对应的std或者skew
-        risk_ret_std = (features['wap1_ret']*100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
-                       (_features['wap1_ret']*100000)
-        risk_ret_skew = features['wap1_ret'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean() - \
-                        _features['wap1_ret']
+        risk_vol_avg = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean()
+        risk_vol_std = features['volume'].rolling(agg_rows, min_periods=agg_rows, step=step_rows).std()
+        risk_ret_std = (features['wap1_ret'] * 100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).mean()
+        risk_ret_skew = (features['wap1_ret'] * 100000).rolling(agg_rows, min_periods=agg_rows, step=step_rows).skew()
 
+        # 对原算法进行了简化，去掉了return的部分
         UMR = pd.DataFrame({
-            'risk_vol_avg': [np.sum(weights * risk_vol_avg * returns)],
-            'risk_ret_std': [np.sum(weights * risk_ret_std * returns)],
-            'risk_ret_skew': [np.sum(weights * risk_ret_skew * returns)],
+            'risk_vol_avg': [np.sum(weights * risk_vol_avg.iloc[:-1]) - risk_vol_avg.iloc[-1]],
+            'risk_vol_std': [np.sum(weights * risk_vol_std.iloc[:-1]) - risk_vol_std.iloc[-1]],
+            'risk_ret_std': [np.sum(weights * risk_ret_std.iloc[:-1]) - risk_ret_std.iloc[-1]],
+            'risk_ret_skew': [np.sum(weights * risk_ret_skew.iloc[:-1]) - risk_ret_skew.iloc[-1]],
         })
         return UMR
 
-    def agg_features(self, features: pd.DataFrame,use_events=True):
+    def agg_features(self, features: pd.DataFrame, use_events=True):
         """
         用于将非常高频的数据agg为高度抽象的特征，如mean、std、realized vol等，并且对agg的大小不同可以构造出动量特征
         Parameters
@@ -246,18 +280,18 @@ class AggDataPreprocessor(BaseDataPreprocessor):
 
         agg_rows = int(agg_timedelta / min_timedelta)
         step_rows = int(pred_timedelta / min_timedelta)
+
         agg_mapper = {k: [np.mean, np.std] for k in features.columns}
-        # 累积成交量不需要求平均，也无法按照last n进行平均用于反映动量，可行的方法为 末值-初值
         agg_diff = {k: [self.diff] for k in ['cum_turnover', 'cum_vol']}
-        agg_rv = {k: [self.realized_volatility] for k in ['wap1_ret', 'wap2_ret', 'mid_p_ret']}
-        agg_sum={k:[np.sum] for k in ['ALO','AMO','ATT','BLO','BMO','BTT']}
+        agg_rv = {k: [self.calc_realized_volatility] for k in ['wap1_ret', 'wap2_ret', 'mid_p_ret']}
+        agg_sum = {k: [np.sum] for k in ['ALO', 'AMO', 'ATT', 'BLO', 'BMO', 'BTT']}
         agg_mapper.update(agg_diff)
         agg_mapper.update(agg_rv)
         if use_events:
             agg_mapper.update(agg_sum)
 
         # 加入realized vol因子，需要注意该df是2 level header
-        last_n_rows = [agg_rows, int(agg_rows / 2)] # todo 是否需要这样来构造动量
+        last_n_rows = [agg_rows, int(agg_rows / 2)]
         # last_n_rows = [agg_rows]
         dfs = []
         for last_n in last_n_rows:
@@ -266,10 +300,11 @@ class AggDataPreprocessor(BaseDataPreprocessor):
             agg_features.columns = ['_'.join(col) for col in agg_features.columns]
 
             mom_features = pd.concat([self.momentum_UMR(table) for table in
-                            features.rolling(last_n, min_periods=last_n, step=step_rows, closed='left', center=False,
-                                             method='table')])
+                                      features.rolling(last_n, min_periods=last_n, step=step_rows, closed='left',
+                                                       center=False,
+                                                       method='table')])
 
-            mom_features.index=agg_features.index
+            mom_features.index = agg_features.index
             temp = pd.concat([agg_features, mom_features], axis=1)
             temp.columns = [col + '_' + str(last_n) for col in temp.columns]
             dfs.append(temp)
@@ -280,7 +315,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
 
     @classmethod
     def get_flattened_Xy(cls, alldatas, num, target, pred_n_steps, use_n_steps, drop_current):
-        pass
+        raise NotImplementedError
 
     def align_Xy(self, X, y, pred_timedelta):
         start_time = X.index
@@ -365,17 +400,16 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         volumes = [f'a{i}_v' for i in range(window_size, 0, -1)] + [f'b{i}_v' for i in range(1, window_size + 1)]
         prices = [f'a{i}_p' for i in range(window_size, 0, -1)] + [f'b{i}_p' for i in range(1, window_size + 1)]
         # order_book_history_dict={k: {for kk in order_book_history_dict[k].keys()} for k in order_book_history_dict.items()}
-        vol_dict={k:[vv for vv in v.values()] for k,v in order_book_history_dict.items()}
-        price_dict={k:[vv for vv in v.keys()] for k,v in order_book_history_dict.items()}
-        vol_df=pd.DataFrame.from_dict(vol_dict,orient='index')
-        price_df=pd.DataFrame.from_dict(price_dict,orient='index')
+        vol_dict = {k: [vv for vv in v.values()] for k, v in order_book_history_dict.items()}
+        price_dict = {k: [vv for vv in v.keys()] for k, v in order_book_history_dict.items()}
+        vol_df = pd.DataFrame.from_dict(vol_dict, orient='index')
+        price_df = pd.DataFrame.from_dict(price_dict, orient='index')
         # 转置成价格从高到低
-        vol_df=vol_df.loc[:,vol_df.columns[::-1]]
-        price_df=price_df.loc[:,price_df.columns[::-1]]
-        vol_df.columns=volumes
-        price_df.columns=prices
-        return vol_df,price_df
-
+        vol_df = vol_df.loc[:, vol_df.columns[::-1]]
+        price_df = price_df.loc[:, price_df.columns[::-1]]
+        vol_df.columns = volumes
+        price_df.columns = prices
+        return vol_df, price_df
 
     # @staticmethod
     # def _gen_clean_obh(datafeed, snapshot_window):
@@ -432,8 +466,10 @@ class LobTimePreprocessor(BasePreprocessor):
         # self.freq = '200ms'
 
     @staticmethod
-    def del_untrade_time(df:Union[pd.Series,pd.DataFrame,List[Union[pd.Series,pd.DataFrame]]], cut_tail=True,strip:str=None,
-                         drop_last_row=False):
+    def del_untrade_time(df: Union[pd.Series, pd.DataFrame, List[Union[pd.Series, pd.DataFrame]]], cut_tail=True,
+                         strip: str = None,
+                         drop_last_row=False,
+                         split_df=False):
         """
 
         Parameters
@@ -443,16 +479,18 @@ class LobTimePreprocessor(BasePreprocessor):
             去掉尾盘3min竞价
         strip
             去掉开收盘n min的数据
+        split_df
+            是否返回上下午分开的df
 
         Returns
         -------
 
         """
 
-        def _meta(df,cut_tail,strip):
-            original_date=config.date
-            current_yyyy,current_mm,current_dd=str(df.index[0].date()).split('-')
-            update_date(current_yyyy,current_mm,current_dd)
+        def _meta(df, cut_tail, strip, split_df):
+            original_date = config.date
+            current_yyyy, current_mm, current_dd = str(df.index[0].date()).split('-')
+            update_date(current_yyyy, current_mm, current_dd)
 
             start_time = config.important_times['continues_auction_am_start']
             end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[
@@ -463,24 +501,29 @@ class LobTimePreprocessor(BasePreprocessor):
                 end_time = min(config.important_times['close_call_auction_end'] - strip_timedelta, end_time)
             a = df.loc[start_time:config.important_times['continues_auction_am_end']]
             b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
-            temp = pd.concat([a, b], axis=0)
-            temp = temp.sort_index()
-            if drop_last_row:
-                temp=temp.iloc[:-1]
+            if split_df:
+                a = a.sort_index()
+                b = b.sort_index()
+                if drop_last_row:
+                    b=b.iloc[:-1]
+                temp=(a,b)
+            else:
+                temp = pd.concat([a, b], axis=0)
+                temp = temp.sort_index()
+                if drop_last_row:
+                    temp = temp.iloc[:-1]
 
             if original_date is not None:
-                update_date(original_date[:4],original_date[4:6],original_date[6:])
+                update_date(original_date[:4], original_date[4:6], original_date[6:])
             else:
-                update_date(None,None,None)
+                update_date(None, None, None)
 
             return temp
 
-        if isinstance(df,list):
-            return [_meta(_df,cut_tail=cut_tail,strip=strip) for _df in df]
-        elif isinstance(df,pd.DataFrame) or isinstance(df,pd.Series):
-            return _meta(df,cut_tail=cut_tail,strip=strip)
-
-
+        if isinstance(df, list):
+            return [_meta(_df, cut_tail=cut_tail, strip=strip,split_df=split_df) for _df in df]
+        elif isinstance(df, pd.DataFrame) or isinstance(df, pd.Series):
+            return _meta(df, cut_tail=cut_tail, strip=strip,split_df=split_df)
 
     @staticmethod
     def add_head_tail(df, head_timestamp, tail_timestamp):
@@ -533,9 +576,10 @@ class LobFeatureEngineering(object):
         self.bv = {k: str(LobColTemplate('b', k, 'v')) for k in range(1, 11)}
         self.curr = 'current'
 
+
     def calc_buy_intense(self):
         """
-        todo: 买入意愿因子《高频因子的现实与幻想》，需要利用9:30开盘后半小时内的数据构建该因子
+        买入意愿因子《高频因子的现实与幻想》，需要利用9:30开盘后半小时内的数据构建该因子
         :return:
         """
         pass
@@ -641,7 +685,7 @@ class LobFeatureEngineering(object):
         spread_tick = spread_tick.rename('spread_tick')
         return spread_tick
 
-    def calc_realized_volatility(self, series):  # testit
+    def calc_realized_volatility(self, series):
         cum_vol = np.cumsum((series + 1) ** 2)
         denominator = np.arange(1, len(series) + 1, 1)
         realized_vol = (cum_vol / denominator - 1).rename('realized_vol')
@@ -775,49 +819,49 @@ class LobFeatureEngineering(object):
 
     def calc_window_avg_order_amount(self):
         """
-        todo 一段时间窗口内的平均订单笔数
+         一段时间窗口内的平均订单笔数
         :return:
         """
         pass
 
     def calc_window_avg_trade_amount(self):
         """
-        todo 一段时间窗口内的平均成交笔数
+         一段时间窗口内的平均成交笔数
         :return:
         """
         pass
 
     def calc_window_avg_order_vol(self):
         """
-        todo 一段时间窗口内的平均订单量
+         一段时间窗口内的平均订单量
         :return:
         """
         pass
 
     def calc_window_avg_trade_vol(self):
         """
-        todo 一段时间窗口内的平均成交量
+         一段时间窗口内的平均成交量
         :return:
         """
         pass
 
     def calc_window_weighted_avg_order_vol(self):
         """
-        todo 一段时间窗口内的加权平均订单量
+         一段时间窗口内的加权平均订单量
         :return:
         """
         pass
 
     def calc_window_weighted_avg_trade_vol(self):
         """
-        todo 一段时间窗口内的加权平均成交量
+         一段时间窗口内的加权平均成交量
         :return:
         """
         pass
 
     def calc_momentum(self):
         """
-        todo 计算一些动量因子
+         计算一些动量因子
         :return:
         """
         pass
@@ -831,7 +875,7 @@ class LobFeatureEngineering(object):
         """
 
         self.mp = self.calc_mid_price(clean_obh)
-        # todo 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。但好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
+        # 好像没啥用，因为在10ms的数据中，该列绝大部分都是0。但好像如果这么看，那么所有因子都是稀疏的，因为diff后大部分时间都是0
         self.spread = self.calc_spread(clean_obh)
         self.breadth_b, self.breadth_a = self.calc_price_breadth(clean_obh)
         self.rs = self.calc_relative_spread(clean_obh)
@@ -879,12 +923,14 @@ class LobFeatureEngineering(object):
     #     features = features.resample(agg_freq).agg([np.mean, np.std, np.median])
     #     return features
 
+
 class ImbalancedDataPreprocessor(BaseDataPreprocessor):
     """
     References
     ----------
     [1] Werner de Vargas, V., Schneider Aranda, J.A., dos Santos Costa, R. et al. Imbalanced data preprocessing techniques for machine learning: a systematic mapping study. Knowl Inf Syst 65, 31–57 (2023). https://doi.org/10.1007/s10115-022-01772-8
     """
+
     def undersampling(self):
         pass
 
@@ -893,6 +939,7 @@ class ImbalancedDataPreprocessor(BaseDataPreprocessor):
 
     def hybrid_sampling(self):
         pass
+
 
 if __name__ == '__main__':
     pass

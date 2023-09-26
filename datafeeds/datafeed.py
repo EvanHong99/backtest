@@ -184,7 +184,7 @@ class LobDataFeed(BaseDataFeed):
 
     def load_feature(self, file_root, date, stk_name,num):
         # fixme: calc feature数据有bug，tocsv后最后一行为空行，会被读进去
-        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=0,skipfooter=1)
+        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=0,skipfooter=1,engine='python')
         self.feature.index = pd.to_datetime(self.feature.index)
         self.feature=self.feature.sort_index()
 

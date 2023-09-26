@@ -48,15 +48,17 @@
 | strategy  | 动态择时close                                                                           |   0    |
 | strategy  | 止损止盈                                                                                |   0    |
 |   task    | 看突变值                                                                                |   0    |
-|   task    | 转为分类问题，10min波动率变化方向，到阈值才算波动的明显变化                                                    |   0    |
-|   task    | 寻找历史上和今天相似的情况，指数，构建因子、聚类，先去看是否有相近时刻，是否预测的走势是相近的                                     |   0    |
-|   todo    | 转3s低频数据，量价，进行预测,预测10min                                                             |   0    |
-|   todo    | 历史上，每天半小时进行匹配，然后统计这半小时内的涨跌幅、开盘、交易量等等，可以发现开收盘半小时大概率（55%）是涨，隔夜大概率跳空，可以据此开发相关的策略             |   0    |
-
+|   todo    | 转3s低频数据，量价，进行预测,预测10min，转为分类问题，10min波动率变化方向，到阈值才算波动的明显变化                                                            |   0    |
+|   todo    | 历史上，每天半小时进行匹配，然后统计这半小时内的涨跌幅、开盘、交易量等等，可以发现开收盘半小时大概率（55%）是涨，隔夜大概率跳空，可以据此开发相关的策略       |   0    |
+基于什么开发策略，更关注precision。波动率的值不同，但只要方向正确就行
+可视化波动率的预测结果
+fbeta的binary到底是啥？自己写lossfunc，比如focalloss
 
 在波动率预测，agg阶段可以使用不同的kernal，借鉴cv
 
 真格量化 期权回测
+
+大盘异动的时刻，权重股和券商股是否异动，其持续性怎么样，盘口怎么变
 
 
 ## Tricks
@@ -65,7 +67,7 @@
 
 ![skewness and kurtosis](../res/preds/alleviate_skewness/y_distribution.png)
 
-```python 
+```python
 def tar_weight(_y_train, bins=20):
     nrows = len(_y_train)
     hist, bin_edge = np.histogram(_y_train, bins=bins)

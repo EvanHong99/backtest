@@ -6,7 +6,7 @@
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
 from datetime import timedelta
-
+import os
 from support import Target,str2timedelta
 
 code_dict = {
@@ -93,10 +93,12 @@ code_dict = {
 }
 complete_status={}
 stk_name_dict = {v: k for k, v in code_dict.items()}
-exclude=['闻泰科技','长城汽车','中信建投']
-# exclude=['紫金矿业','工商银行','中国建筑','中国石化']
+exclude=[]
 
-
+def create_dirs(dir_list:list):
+    for path in dir_list:
+        if not os.path.exists(path):
+            os.mkdir(path)
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
 # root = '/content/drive/MyDrive/work/internship/haitong_sec/2023.06.08超高频上证50指数计算/'
 data_root = root + 'data/'
@@ -104,6 +106,9 @@ detail_data_root = data_root + '个股交易细节/'
 res_root = root + 'res/'
 model_root = root + 'models/'
 scaler_root = root + 'scalers/'
+sub_dirs=[d+'10min_10min/' for d in [res_root,model_root,scaler_root]]
+create_dirs(sub_dirs)
+
 
 FILE_FMT_order_book_history = "{}_{}_order_book_history.csv"  # 默认买卖各10档
 FILE_FMT_order_book_history_dict = "{}_{}_order_book_history.pkl"  # 默认买卖各10档
@@ -128,35 +133,48 @@ important_times = None
 ranges = None
 
 
-# prediction settings
+# ==========prediction settings===========
 # ret
-target = Target.vol.name  # ret,current
-min_freq='10ms' # 最小精度，agg前data的频率，load data默认将数据asfreq至该freq
-agg_freq=min_freq # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
-freq = agg_freq
-freq_minutes=1
-pred_n_steps = 200  # 预测1个1min
-use_n_steps = 3  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
-drop_current = False  # 是否将当前股价作为因子输入给模型
-use_level = 5
-strip_time='5min' # 去掉开收盘5min数据
-# vol
 # target = Target.vol.name  # ret,current
-# min_freq='1s' # 最小精度，agg前data的频率，load data默认将数据asfreq至该freq
-# agg_freq='1min' # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
+# min_freq='10ms' # 最小精度，agg前data的频率，load data默认将数据asfreq至该freq
+# agg_freq=min_freq # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
 # freq = agg_freq
 # freq_minutes=1
-# pred_n_steps = 1  # 预测1个1min
+# pred_n_steps = 200  # 预测1个1min
 # use_n_steps = 3  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
 # drop_current = False  # 是否将当前股价作为因子输入给模型
 # use_level = 5
 # strip_time='5min' # 去掉开收盘5min数据
 
+# # vol
+# target = Target.vol.name  # vol
+# min_freq='1s' # 最小精度，agg前data的频率，load data默认将数据asfreq至该freq
+# agg_freq='1min' # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
+# freq = agg_freq
+# # freq_minutes=1
+# pred_n_steps = 10  # 预测1个1min
+# use_n_steps = 10  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
+# drop_current = False  # 是否将当前股价作为因子输入给模型
+# use_level = 5
+# strip_time='5min' # 去掉开收盘5min数据
+
+# vol_chg
+target = Target.vol_chg.name  # vol_chg
+min_freq='3s' # 最小精度，agg前data的频率，calc_features将数据asfreq至该freq
+agg_freq='10min' # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
+freq = agg_freq
+# freq_minutes=1
+pred_n_steps = 1  # 预测1个10min
+use_n_steps = 1  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
+drop_current = False  # 是否将当前股价作为因子输入给模型
+use_level = 5
+strip_time='5min' # 去掉开收盘5min数据
+
 min_timedelta=str2timedelta(min_freq)
 agg_timedelta=str2timedelta(agg_freq,use_n_steps)
 pred_timedelta=str2timedelta(agg_freq,pred_n_steps)
 strip_timedelta=str2timedelta(strip_time)
-
+# ====================================
 
 # init
 # update_date(yyyy='2022', mm='06', dd='29')

@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
             self = LobBackTester(model_root=model_root,
                                  file_root=detail_data_root,
-                                 dates=[],  # todo 确认一致性是否有bug
+                                 dates=[], # 统一date和date1两种格式的日期
                                  stk_names=[],
                                  levels=5,
                                  target=Target.ret.name,
