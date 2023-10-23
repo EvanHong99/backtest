@@ -399,6 +399,7 @@ if __name__ == '__main__':
             # autogluon
             if USE_AUTOGLUON:
 
+
                 # [medium_quality,best_quality,good_quality] see autogluon/tabular/configs/presets_configs.py
                 quality = 'medium_quality'
                 mid_path = f'{config.target}_{quality}_{min_timedelta.total_seconds()}_{agg_timedelta.total_seconds()}_{pred_timedelta.total_seconds()}/'

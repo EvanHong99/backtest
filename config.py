@@ -96,6 +96,7 @@ stk_name_dict = {v: k for k, v in code_dict.items()}
 exclude=[]
 
 
+
 root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
 # root = '/content/drive/MyDrive/work/internship/haitong_sec/2023.06.08超高频上证50指数计算/'
 data_root = root + 'data/'
@@ -105,6 +106,7 @@ model_root = root + 'models/'
 scaler_root = root + 'scalers/'
 sub_dirs=[d+'10min_10min/' for d in [res_root,model_root,scaler_root]]
 # create_dirs(sub_dirs)
+
 
 
 FILE_FMT_order_book_history = "{}_{}_order_book_history.csv"  # 默认买卖各10档
