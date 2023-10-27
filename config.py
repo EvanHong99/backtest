@@ -7,7 +7,7 @@
 # @Description:
 from datetime import timedelta
 import os
-from support import Target,str2timedelta,create_dirs
+from backtest.support import Target,str2timedelta,create_dirs
 
 code_dict = {
     # '浦发银行': '600000.XSHG',

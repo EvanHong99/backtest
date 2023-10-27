@@ -19,6 +19,7 @@ import pickle
 import json
 import logging
 from typing import Union
+from abc import ABC,abstractmethod
 
 
 # import config # 在函数中import
@@ -76,10 +77,60 @@ class Target(Enum):
     wap_vol = 4
     vol_chg=5 # 波动率的变化方向
 
+class ColTemplate(ABC):
+    """
+    column template
+    """
+
+    def __init__(self, side: str = None, level: int = None, target: str = None):
+        self.side = side
+        self.level = level
+        self.target = target
+        self.current = None
+        self.mid_price = None
+
+    @abstractmethod
+    def __str__(self):
+        pass
+
+    @abstractmethod
+    def __repr__(self):
+        pass
+
+class RQLobTemplateCaitong(ColTemplate):
+    """
+    column template for 财通. 数据源自于ricequant
+    """
+
+    def __init__(self, side: str = None, level: int = None, target: str = None):
+        """
+
+        Parameters
+        ----------
+        side : str
+            `a` for ask `b` for bid
+        level : int
+            1~5
+        target : str
+            `p`:`Price`,`v`:`Volume`
+        """
+        super().__init__(side,level,target)
+        self.current = 'current'
+        self.mid_price = 'mid_price'
+        self.mapper={'a':'Buy',
+                     'b':'Sell',
+                     'p':'Price',
+                     'v':'Volume'}
+
+    def __str__(self):
+        return "{:s}{:s}{:02d}".format(self.mapper[self.side],self.mapper[self.target],self.level)
+
+    def __repr__(self):
+        return self.__str__()
 
 class LobColTemplate(object):
     """
-    column template
+    column template for 海通. 数据源自于ricequant
     """
 
     def __init__(self, side: str = None, level: int = None, target: str = None):

@@ -15,9 +15,9 @@ import pandas as pd
 from numba import jit
 from sklearn.preprocessing import StandardScaler
 
-from config import *
-import config
-from support import *
+from backtest.config import *
+import backtest.config as config
+from backtest.support import *
 import pickle
 from abc import abstractmethod
 from typing import Union, List
@@ -565,16 +565,28 @@ class LobTimePreprocessor(BasePreprocessor):
 
 
 class LobFeatureEngineering(object):
-    """
+    """计算订单簿截面因子.
+
+    Attributes
+    ----------
+
 
     """
 
-    def __init__(self):
-        self.ap = {k: str(LobColTemplate('a', k, 'p')) for k in range(1, 11)}
-        self.bp = {k: str(LobColTemplate('b', k, 'p')) for k in range(1, 11)}
-        self.av = {k: str(LobColTemplate('a', k, 'v')) for k in range(1, 11)}
-        self.bv = {k: str(LobColTemplate('b', k, 'v')) for k in range(1, 11)}
-        self.curr = 'current'
+    def __init__(self,curr='current',ColFormatter=LobColTemplate):
+        """
+
+        Parameters
+        ----------
+        curr : str
+            最新价列名
+        ColFormatter :
+        """
+        self.ap = {k: str(ColFormatter('a', k, 'p')) for k in range(1, 11)}
+        self.bp = {k: str(ColFormatter('b', k, 'p')) for k in range(1, 11)}
+        self.av = {k: str(ColFormatter('a', k, 'v')) for k in range(1, 11)}
+        self.bv = {k: str(ColFormatter('b', k, 'v')) for k in range(1, 11)}
+        self.curr = curr
 
 
     def calc_buy_intense(self):
