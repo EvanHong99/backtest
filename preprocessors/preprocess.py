@@ -611,7 +611,9 @@ class LobFeatureEngineering(object):
                     df[self.bv[level]] + df[self.av[level]])
         name = f'wap{level}'
         if cross: name += '_c'
-        return wap.rename(name)
+        wap=wap.rename(name)
+        wap=wap.replace([np.inf,-np.inf],np.nan)
+        return wap
 
     def calc_mid_price(self, df):
         return (df[self.ap[1]] + df[self.bp[1]]).rename('mid_price') / 2
@@ -749,17 +751,21 @@ class LobFeatureEngineering(object):
         # 需要注意，如果不适用middle price那么可能分母会出现nan
         bid_d = np.array([M / (M - df[self.bp[s]]) for s in levels])
         # bid_d = [_.replace(np.inf,0) for _ in bid_d]
-        bid_denominator = sum(bid_d)
-        bid_weights = bid_d / bid_denominator
+        idx=np.isinf(bid_d)
+        bid_d[idx]=np.nan
+        bid_denominator = np.nansum(bid_d,axis=0).reshape(-1,1).T
+        bid_weights = np.divide(bid_d,bid_denominator,where=~np.isnan(bid_denominator))
         press_buy = sum([df[self.bv[i + 1]] * w for i, w in enumerate(bid_weights)])
 
         ask_d = np.array([M / (df[self.ap[s]] - M) for s in levels])
         # ask_d = [_.replace(np.inf,0) for _ in ask_d]
-        ask_denominator = sum(ask_d)
-        ask_weights = ask_d / ask_denominator
+        idx=np.isinf(ask_d)
+        ask_d[idx]=np.nan
+        ask_denominator = np.nansum(ask_d,axis=0).reshape(-1,1).T
+        ask_weights = np.divide(ask_d,ask_denominator,where=~np.isnan(ask_denominator))
         press_sell = sum([df[self.av[i + 1]] * w for i, w in enumerate(ask_weights)])
 
-        res = pd.Series((np.log(press_buy) - np.log(press_sell)).replace([-np.inf, np.inf], np.nan),
+        res = pd.Series((np.log(press_buy,where=~np.isnan(press_buy)) - np.log(press_sell,where=~np.isnan(press_sell))).replace([-np.inf, np.inf], np.nan),
                         name='buy_sell_pressure')
         return res
 
@@ -902,9 +908,9 @@ class LobFeatureEngineering(object):
         self.lis = [self.calc_length_imbalance(clean_obh, level=i) for i in range(1, level)]
         self.his = [self.calc_height_imbalance(clean_obh, level=i) for i in range(2, level)]
 
-        self.mp_ret = np.log(self.mp).diff().rename("mid_p_ret")
-        self.wap1_ret = np.log(self.waps[0]).diff().rename("wap1_ret")
-        self.wap2_ret = np.log(self.waps[1]).diff().rename("wap2_ret")
+        self.mp_ret = np.log(self.mp,where=np.logical_and(~np.isnan(self.mp),self.mp>0)).diff().rename("mid_p_ret")
+        self.wap1_ret = np.log(self.waps[0],where=np.logical_and(~np.isnan(self.waps[0]),self.waps[0]>0)).diff().rename("wap1_ret")
+        self.wap2_ret = np.log(self.waps[1],where=np.logical_and(~np.isnan(self.waps[1]),self.waps[1]>0)).diff().rename("wap2_ret")
 
         self.features = pd.concat(
             self.waps
@@ -926,7 +932,7 @@ class LobFeatureEngineering(object):
                self.wap2_ret,
                ],
             axis=1)
-        # fixme将2 level header转为1 level
+        # fixme 将2 level header转为1 level
         # df_feature.columns = ['_'.join(col) for col in df_feature.columns]  # time_id is changed to time_id_
 
         return self.features
