@@ -1,5 +1,5 @@
 # -*- coding=utf-8 -*-
-# @File     : config.py
+# @File     : myconfig.py
 # @Time     : 2023/8/2 18:57
 # @Author   : EvanHong
 # @Email    : 939778128@qq.com
