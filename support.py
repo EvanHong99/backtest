@@ -18,7 +18,7 @@ from datetime import timedelta
 import pickle
 import json
 import logging
-from typing import Union
+from typing import Union, Optional
 from abc import ABC,abstractmethod
 
 
@@ -335,6 +335,54 @@ def str2timedelta(time_str: str, multiplier: int = None)->datetime.timedelta:
         raise NotImplementedError("in config")
     return td
 
+
+def continuous2discrete(ret: pd.Series, drift=0, pos_threshold: Union[float, list] = 0.001,
+                        neg_threshold: Union[float, list] = None, start_from_zero=False, name=None, fill_na:Optional[Union[float,int]]=None):
+    """
+
+    Parameters
+    ----------
+    start_from_zero :
+    ret :
+    pos_threshold :
+    drift : 用于修正偏度至正态
+    neg_threshold :
+    name :
+    fill_na :
+        是否用fill_na填充nan。若为None，那么drop nan
+
+    Returns
+    -------
+
+    """
+    if name is None and isinstance(ret,pd.Series):
+        name = ret.name
+    else: name=name
+    if isinstance(pos_threshold, float):
+        if neg_threshold is None:
+            neg_threshold = -pos_threshold
+        assert pos_threshold >= 0 and neg_threshold <= 0
+        index = ret.index
+        if ret.isna().any():
+            if fill_na is None:
+                logging.warning("数据含nan，drop")
+                ret=ret.dropna()
+            else:
+                ret=ret.fillna(fill_na)
+        ret = np.where(ret > drift + pos_threshold, 1, ret)
+        ret = np.where(ret < drift + neg_threshold, -1, ret)
+        ret = np.where(np.logical_and(ret <= drift + pos_threshold, ret >= drift + neg_threshold), 0,
+                       ret)
+        ret = pd.Series(ret, index=index, name=name).astype(int)
+        if start_from_zero:
+            ret += 1
+        return ret
+    elif isinstance(pos_threshold, list):
+        for x in pos_threshold:
+            assert x >= 0
+        if neg_threshold is None:
+            neg_threshold = [-x for x in pos_threshold]
+        raise NotImplementedError()
 
 if __name__ == '__main__':
     import config
