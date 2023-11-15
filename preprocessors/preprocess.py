@@ -147,7 +147,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def calc_realized_volatility(series: pd.Series,**kwargs):
+    def calc_realized_volatility(series: pd.Series, **kwargs):
         """annualized realized volatility
         realized volatility和ret序列的std不一样在于，std是减去ret的均值，而realized volatility可以看做是减去0
 
@@ -178,7 +178,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
         #     n=kwargs['n']
         n = 1
         temp = series.dropna()
-        res = pd.Series(data=[np.sqrt(np.matmul(temp.T, temp) / (len(temp) - 1)*n)], index=[series.index[-1]])
+        res = pd.Series(data=[np.sqrt(np.matmul(temp.T, temp) / (len(temp) - 1) * n)], index=[series.index[-1]])
         return res
 
     @staticmethod
@@ -239,7 +239,7 @@ class AggDataPreprocessor(BaseDataPreprocessor):
             'risk_ret_std': [np.nan],
             'risk_ret_skew': [np.nan],
         })
-        split = 5 # 分为n等分，计算风险调整加权收益
+        split = 5  # 分为n等分，计算风险调整加权收益
         H = 2
         agg_rows = step_rows = int(len(features) / split)
         weights = cls._calc_decay_weight(split - 1, H=H)  # 最后一个frame不需要加权
@@ -464,6 +464,38 @@ class LobTimePreprocessor(BasePreprocessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # self.freq = '200ms'
+        pass
+
+    @staticmethod
+    def del_middle_hours(df: Union[pd.Series, pd.DataFrame], morning_end: datetime.time = None,
+                         afternoon_begin: datetime.time = None, margin='left'):
+        """
+        去掉日内中间不交易的一段时间，并可以设置参数使得可以去掉中午收盘前一段时间的不可使用数据
+        Parameters
+        ----------
+        df :
+        morning_end :
+        afternoon_begin :
+        margin :
+            both 左闭右闭
+            left 左闭右开
+            right 左开右闭
+            none 左开右开
+
+        Returns
+        -------
+
+        """
+        assert not (morning_end is None and afternoon_begin is None)
+        if morning_end is None:
+            return df.loc[df.index.time >= afternoon_begin]
+        elif afternoon_begin is None:
+            return df.loc[df.index.time < morning_end]
+        else:
+            if margin == 'left':
+                return df.loc[(df.index.time < morning_end) | (df.index.time >= afternoon_begin)]
+            else:
+                raise NotImplementedError()
 
     @staticmethod
     def del_untrade_time(df: Union[pd.Series, pd.DataFrame, List[Union[pd.Series, pd.DataFrame]]], cut_tail=True,
@@ -505,8 +537,8 @@ class LobTimePreprocessor(BasePreprocessor):
                 a = a.sort_index()
                 b = b.sort_index()
                 if drop_last_row:
-                    b=b.iloc[:-1]
-                temp=(a,b)
+                    b = b.iloc[:-1]
+                temp = (a, b)
             else:
                 temp = pd.concat([a, b], axis=0)
                 temp = temp.sort_index()
@@ -521,9 +553,9 @@ class LobTimePreprocessor(BasePreprocessor):
             return temp
 
         if isinstance(df, list):
-            return [_meta(_df, cut_tail=cut_tail, strip=strip,split_df=split_df) for _df in df]
+            return [_meta(_df, cut_tail=cut_tail, strip=strip, split_df=split_df) for _df in df]
         elif isinstance(df, pd.DataFrame) or isinstance(df, pd.Series):
-            return _meta(df, cut_tail=cut_tail, strip=strip,split_df=split_df)
+            return _meta(df, cut_tail=cut_tail, strip=strip, split_df=split_df)
 
     @staticmethod
     def add_head_tail(df, head_timestamp, tail_timestamp):
@@ -573,7 +605,7 @@ class LobFeatureEngineering(object):
 
     """
 
-    def __init__(self,curr='current',ColFormatter=LobColTemplate):
+    def __init__(self, curr='current', ColFormatter=LobColTemplate, limit_ratio=0.2):
         """
 
         Parameters
@@ -581,13 +613,31 @@ class LobFeatureEngineering(object):
         curr : str
             最新价列名
         ColFormatter :
+        limit_ratio :
+            涨跌停
         """
         self.ap = {k: str(ColFormatter('a', k, 'p')) for k in range(1, 11)}
         self.bp = {k: str(ColFormatter('b', k, 'p')) for k in range(1, 11)}
         self.av = {k: str(ColFormatter('a', k, 'v')) for k in range(1, 11)}
         self.bv = {k: str(ColFormatter('b', k, 'v')) for k in range(1, 11)}
         self.curr = curr
+        self.limit_ratio = limit_ratio
 
+    def calc_reaches_limit(self, df):
+        """
+        todo 利用昨收计算涨跌停阈值
+
+        Parameters
+        ----------
+        df :
+
+        Returns
+        -------
+
+        """
+        # _open=df[self.curr].iloc[0]
+        # upper=_open*
+        pass
 
     def calc_buy_intense(self):
         """
@@ -611,11 +661,33 @@ class LobFeatureEngineering(object):
                     df[self.bv[level]] + df[self.av[level]])
         name = f'wap{level}'
         if cross: name += '_c'
-        wap=wap.rename(name)
-        wap=wap.replace([np.inf,-np.inf],np.nan)
+        wap = wap.rename(name)
+        wap = wap.replace([np.inf, -np.inf], np.nan)
         return wap
 
-    def calc_mid_price(self, df):
+    def calc_mid_price(self, df, process_zeros=True):
+        """
+
+        Parameters
+        ----------
+        df :
+        process_zeros :
+            米筐数据可能会在涨停时显示buy price为0.处理逻辑为
+
+        Returns
+        -------
+
+        """
+        idx_bp_zero = df[self.bp[1]] == 0
+        idx_ap_zero = df[self.ap[1]] == 0
+        if process_zeros:
+            # if np.logical_and(idx_bp_zero,idx_ap_zero).any(): raise ValueError()
+            # fill ask price
+            idx = np.logical_and(idx_ap_zero, ~idx_bp_zero)
+            df.loc[idx, self.ap[1]] = df[self.bp[1]].loc[idx] + 0.01  # add a tick
+            # fill bid price
+            idx = np.logical_and(idx_bp_zero, ~idx_ap_zero)
+            df.loc[idx, self.bp[1]] = df[self.ap[1]].loc[idx] - 0.01
         return (df[self.ap[1]] + df[self.bp[1]]).rename('mid_price') / 2
 
     def calc_spread(self, df):
@@ -739,7 +811,9 @@ class LobFeatureEngineering(object):
         :param method:
         :return:
 
-        .. [#] [天风证券_买卖压力失衡——利用高频数据拓展盘口数据](https://bigquant.com/wiki/pdfjs/web/viewer.html?file=/wiki/static/upload/2b/2bc961b3-e365-4afb-aa98-e9f9d9fa299e.pdf)
+        References
+        ----------
+            .. [#] [天风证券_买卖压力失衡——利用高频数据拓展盘口数据](https://bigquant.com/wiki/pdfjs/web/viewer.html?file=/wiki/static/upload/2b/2bc961b3-e365-4afb-aa98-e9f9d9fa299e.pdf)
         """
         assert level1 < level2
         levels = np.arange(level1, level2 + 1)
@@ -751,22 +825,21 @@ class LobFeatureEngineering(object):
         # 需要注意，如果不适用middle price那么可能分母会出现nan
         bid_d = np.array([M / (M - df[self.bp[s]]) for s in levels])
         # bid_d = [_.replace(np.inf,0) for _ in bid_d]
-        idx=np.isinf(bid_d)
-        bid_d[idx]=np.nan
-        bid_denominator = np.nansum(bid_d,axis=0).reshape(-1,1).T
-        bid_weights = np.divide(bid_d,bid_denominator,where=~np.isnan(bid_denominator))
+        idx = np.isinf(bid_d)
+        bid_d[idx] = np.nan
+        bid_denominator = np.nansum(bid_d, axis=0).reshape(-1, 1).T
+        bid_weights = np.divide(bid_d, bid_denominator, where=~np.isnan(bid_denominator))
         press_buy = sum([df[self.bv[i + 1]] * w for i, w in enumerate(bid_weights)])
 
         ask_d = np.array([M / (df[self.ap[s]] - M) for s in levels])
         # ask_d = [_.replace(np.inf,0) for _ in ask_d]
-        idx=np.isinf(ask_d)
-        ask_d[idx]=np.nan
-        ask_denominator = np.nansum(ask_d,axis=0).reshape(-1,1).T
-        ask_weights = np.divide(ask_d,ask_denominator,where=~np.isnan(ask_denominator))
+        idx = np.isinf(ask_d)
+        ask_d[idx] = np.nan
+        ask_denominator = np.nansum(ask_d, axis=0).reshape(-1, 1).T
+        ask_weights = np.divide(ask_d, ask_denominator, where=~np.isnan(ask_denominator))
         press_sell = sum([df[self.av[i + 1]] * w for i, w in enumerate(ask_weights)])
 
-        res = pd.Series((np.log(press_buy,where=~np.isnan(press_buy)) - np.log(press_sell,where=~np.isnan(press_sell))).replace([-np.inf, np.inf], np.nan),
-                        name='buy_sell_pressure')
+        res = pd.Series((press_buy - press_sell).replace([-np.inf, np.inf], np.nan), name='buy_sell_pressure')
         return res
 
     def calc_gaps(self, df, level=5):
@@ -908,9 +981,13 @@ class LobFeatureEngineering(object):
         self.lis = [self.calc_length_imbalance(clean_obh, level=i) for i in range(1, level)]
         self.his = [self.calc_height_imbalance(clean_obh, level=i) for i in range(2, level)]
 
-        self.mp_ret = np.log(self.mp,where=np.logical_and(~np.isnan(self.mp),self.mp>0)).diff().rename("mid_p_ret")
-        self.wap1_ret = np.log(self.waps[0],where=np.logical_and(~np.isnan(self.waps[0]),self.waps[0]>0)).diff().rename("wap1_ret")
-        self.wap2_ret = np.log(self.waps[1],where=np.logical_and(~np.isnan(self.waps[1]),self.waps[1]>0)).diff().rename("wap2_ret")
+        self.mp_ret = np.log(self.mp, where=np.logical_and(~np.isnan(self.mp), self.mp > 0)).diff().rename("mid_p_ret")
+        self.wap1_ret = np.log(self.waps[0],
+                               where=np.logical_and(~np.isnan(self.waps[0]), self.waps[0] > 0)).diff().rename(
+            "wap1_ret")
+        self.wap2_ret = np.log(self.waps[1],
+                               where=np.logical_and(~np.isnan(self.waps[1]), self.waps[1] > 0)).diff().rename(
+            "wap2_ret")
 
         self.features = pd.concat(
             self.waps

@@ -343,6 +343,7 @@ def continuous2discrete(ret: pd.Series, drift=0, pos_threshold: Union[float, lis
     Parameters
     ----------
     start_from_zero :
+        生成的label是否从0开始，从而符合pytorch多分类的标签要求
     ret :
     pos_threshold :
     drift : 用于修正偏度至正态
@@ -365,15 +366,16 @@ def continuous2discrete(ret: pd.Series, drift=0, pos_threshold: Union[float, lis
         index = ret.index
         if ret.isna().any():
             if fill_na is None:
-                logging.warning("数据含nan，drop")
-                ret=ret.dropna()
+                logging.warning("数据含nan")
+                # ret=ret.dropna()
             else:
                 ret=ret.fillna(fill_na)
-        ret = np.where(ret > drift + pos_threshold, 1, ret)
-        ret = np.where(ret < drift + neg_threshold, -1, ret)
-        ret = np.where(np.logical_and(ret <= drift + pos_threshold, ret >= drift + neg_threshold), 0,
+        idx_isna=ret.isna()
+        ret = np.where(np.logical_and(~idx_isna,ret > drift + pos_threshold), 1, ret)
+        ret = np.where(np.logical_and(~idx_isna,ret < drift + neg_threshold), -1, ret)
+        ret = np.where(np.logical_and(~idx_isna,np.logical_and(ret <= drift + pos_threshold, ret >= drift + neg_threshold)), 0,
                        ret)
-        ret = pd.Series(ret, index=index, name=name).astype(int)
+        ret = pd.Series(ret, index=index, name=name)
         if start_from_zero:
             ret += 1
         return ret
