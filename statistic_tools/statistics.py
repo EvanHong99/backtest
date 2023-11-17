@@ -8,11 +8,11 @@
 from typing import Union
 
 import pandas as pd
-from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score,accuracy_score,classification_report
+from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score,accuracy_score,classification_report,confusion_matrix
 import numpy as np
 
 # import config
-from support import Target
+# from support import Target
 
 
 class BaseStatistics(object):
@@ -21,6 +21,22 @@ class BaseStatistics(object):
         for key, value in kwargs.items():
             self.__setattr__(key, value)
 
+class ClassificationStatistics(BaseStatistics):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    @staticmethod
+    def calc_precision(pred_res, target):
+        return np.sum(np.logical_and(pred_res['y_pred'] == target, pred_res['y_true'] == target)) / np.sum(
+            pred_res['y_pred'] == target)
+
+    @staticmethod
+    def calc_recall(pred_res, target):
+        return np.sum(np.logical_and(pred_res['y_pred'] == target, pred_res['y_true'] == target)) / np.sum(
+            pred_res['y_true'] == target)
+
+    @staticmethod
+    def calc_confusion_matrix(pred_res):
+        return confusion_matrix(pred_res['y_true'],pred_res['y_pred'])
 
 class LobStatistics(BaseStatistics):
     def __init__(self, *args, **kwargs):
