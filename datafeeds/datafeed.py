@@ -8,43 +8,166 @@
 import logging
 from copy import deepcopy
 
-from config import *
-import config
-from support import *
-from preprocessors.preprocess import LobTimePreprocessor
+from backtest.config import *
+import backtest.config as config
+from backtest.support import *
+from backtest.preprocessors.preprocess import LobTimePreprocessor
 import pickle
 import h5py
 import pandas as pd
+from backtest.datafeeds.namespaces import BaseNamespace, PandasNamespace
+from typing import Union
+
 
 class BaseDataFeed(object):
     def __init__(self, *args, **kwargs):
         self.args = args
+        self.kwargs = kwargs
         for key, value in kwargs.items():
             self.__setattr__(key, value)
+        self.data = None
+        self.namespace = None
+
+
+class PandasDataFeed(BaseDataFeed):
+
+    def __init__(self,
+                 name='PandasDataFeed',
+                 col_datetime: Union[int,str] = -1,
+                 col_open: str = None,
+                 col_high: str = None,
+                 col_low: str = None,
+                 col_close: str = None,
+                 col_volume: str = None,
+                 col_turnover: str = None,
+                 datetime_format: str = "%Y-%m-%d %H:%M:%S",
+                 data:Union[pd.DataFrame|pd.Series]=None,
+                 *args, **kwargs):
+        """
+        加入decorators可以使得某些变量只能被访问，而不能被重新赋值。并且能够在不改变client code的情况下更改取值前的一些逻辑
+
+        Parameters
+        ----------
+        name :
+        col_datetime : int,
+            -1 默认是index，否则是datetime列的列下标
+        col_open :
+        col_high :
+        col_low :
+        col_close :
+        col_volume :
+        col_turnover :
+        datetime_format :
+        args :
+        kwargs :
+        """
+        super().__init__(args, kwargs)
+        self.name = name
+        self.col_datetime = col_datetime
+        self.col_open = col_open
+        self.col_high = col_high
+        self.col_low = col_low
+        self.col_close = col_close
+        self.col_volume = col_volume
+        self.col_turnover = col_turnover
+        self.datetime_format = datetime_format
+        self.col_mapper = PandasNamespace()  # 将外部不统一的列名统一到框架下的命名空间
+        self.data = None
+        if data is not None:
+            self.align_data(data)
+
+    def align_data(self, df: pd.DataFrame):
+        """
+        根据init中标明的列，将df整理成标准化的数据
+        Parameters
+        ----------
+        df :
+
+        Returns
+        -------
+
+        """
+        columns = df.columns
+        # 如果输入数据的index不是datetime，那么将指定的datetime那列作为index
+        if self.col_datetime is None:
+            raise ValueError("col_datetime can't be none")
+        elif isinstance(self.col_datetime,int):
+            if self.col_datetime!=-1:
+                df = df.set_index(columns[self.col_datetime])
+        elif isinstance(self.col_datetime,str):
+            df = df.set_index(self.col_datetime)
+        df.index = pd.to_datetime(df.index, format=self.datetime_format)
+        self.data = df.sort_index()
+
+        # 将各个列补全
+        colidx_list = [self.col_open, self.col_high, self.col_low, self.col_close, self.col_volume, self.col_turnover]
+        for colname, colidx in zip(['open', 'high', 'low', 'close', 'volume', 'turnover'], colidx_list):
+            if colidx is None:
+                self.col_mapper.__delattr__(colname)
+            else:
+                self.col_mapper.__setattr__(colname, colidx)
+        for k, v in self.kwargs.items():
+            if v not in columns:
+                logging.warning(f"unmatched column name and kwargs v: {v} columns: {columns}")
+            else:
+                self.col_mapper.__setattr__(k, v)
+
+    @property
+    def index(self):
+        return self.data.index
+
+    @property
+    def datetime(self):
+        return self.data.index
+
+    @property
+    def open(self):
+        return self.data.loc[:, self.col_mapper.open]
+
+    @property
+    def high(self):
+        return self.data.loc[:, self.col_mapper.high]
+
+    @property
+    def low(self):
+        return self.data.loc[:, self.col_mapper.low]
+
+    @property
+    def close(self):
+        return self.data.loc[:, self.col_mapper.close]
+
+    @property
+    def volume(self):
+        return self.data.loc[:, self.col_mapper.volume]
+
+    @property
+    def turnover(self):
+        return self.data.loc[:, self.col_mapper.turnover]
 
 
 class LobModelFeed(BaseDataFeed):
-    def __init__(self, model_root, stk_name,model_class, *args, **kwargs):
+    def __init__(self, model_root, stk_name, model_class, *args, **kwargs):
         # load models
         super().__init__(*args, **kwargs)
         self.models = []
         for num in range(4):
             pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num, model_class), 'rb'))
             try:
-                model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num,model_class), 'rb'))
+                model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num, model_class), 'rb'))
                 print(f'best model for period {num}', model.model.estimator)
                 self.models.append(deepcopy(model))
             except Exception as e:
-                logging.error(model_root + FILE_FMT_model.format(stk_name, num,model_class)+" not exists")
+                logging.error(model_root + FILE_FMT_model.format(stk_name, num, model_class) + " not exists")
                 print(str(e.__context__))
 
     @staticmethod
-    def load_model(model_root, stk_name,num,model_class,verbose=False):
+    def load_model(model_root, stk_name, num, model_class, verbose=False):
         try:
-            model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num,model_class), 'rb'))
-            if verbose:print(f'best model for period {num}', model.model.estimator)
+            model = pickle.load(open(model_root + FILE_FMT_model.format(stk_name, num, model_class), 'rb'))
+            if verbose: print(f'best model for period {num}', model.model.estimator)
         except:
-            logging.error(model_root + FILE_FMT_model.format(stk_name, num,model_class) + " not exists")
+            logging.error(model_root + FILE_FMT_model.format(stk_name, num, model_class) + " not exists")
+
 
 class LobDataFeed(BaseDataFeed):
     def __init__(self, *args, **kwargs):
@@ -151,15 +274,15 @@ class LobDataFeed(BaseDataFeed):
                                                                         'close_call_auction_end'])
 
         self.current = \
-        pd.read_csv(file_root + FILE_FMT_price_history.format(date, stk_name)).set_index('timestamp')[
-            'current'].rename('current').groupby(level=0).last()
+            pd.read_csv(file_root + FILE_FMT_price_history.format(date, stk_name)).set_index('timestamp')[
+                'current'].rename('current').groupby(level=0).last()
         self.current.index = pd.to_datetime(self.current.index)
         return self.order_book_history, self.current
 
-    def load_clean_obh(self, file_root, date, stk_name, snapshot_window=5,use_cols:list=None):
+    def load_clean_obh(self, file_root, date, stk_name, snapshot_window=5, use_cols: list = None):
 
         if use_cols is not None:
-            cols=use_cols
+            cols = use_cols
         else:
             # 删除部分high level列
             cols = [str(LobColTemplate('a', i, 'p')) for i in range(snapshot_window, 0, -1)]
@@ -170,7 +293,7 @@ class LobDataFeed(BaseDataFeed):
 
         self.clean_obh = pd.read_csv(file_root + FILE_FMT_clean_obh.format(date, stk_name), index_col=0)
         self.clean_obh.index = pd.to_datetime(self.clean_obh.index)
-        self.clean_obh=self.clean_obh.sort_index()
+        self.clean_obh = self.clean_obh.sort_index()
 
         self.clean_obh = self.clean_obh.loc[:, cols]
         return self.clean_obh
@@ -178,17 +301,32 @@ class LobDataFeed(BaseDataFeed):
     def load_vol_tov(self, file_root, date, stk_name):
         self.vol_tov = pd.read_csv(file_root + FILE_FMT_vol_tov.format(date, stk_name), index_col='timestamp')
         self.vol_tov.index = pd.to_datetime(self.vol_tov.index)
-        self.vol_tov=self.vol_tov.sort_index()
+        self.vol_tov = self.vol_tov.sort_index()
 
         return self.vol_tov
 
-    def load_feature(self, file_root, date, stk_name,num):
+    def load_feature(self, file_root, date, stk_name, num):
         # fixme: calc feature数据有bug，tocsv后最后一行为空行，会被读进去
-        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name,num), index_col=0,header=0,skipfooter=1,engine='python')
+        self.feature = pd.read_csv(file_root + FILE_FMT_feature.format(date, stk_name, num), index_col=0, header=0,
+                                   skipfooter=1, engine='python')
         self.feature.index = pd.to_datetime(self.feature.index)
-        self.feature=self.feature.sort_index()
+        self.feature = self.feature.sort_index()
 
         return self.feature
 
+
 if __name__ == '__main__':
-    pass
+    df = pd.read_csv(
+        '/Users/hongyifan/Desktop/work/internship/caitong_securities/2023.10.23股指日内短期预测/data/data_5min_科创50.csv',index_col=1)
+    datafeed = PandasDataFeed(
+        data=df,
+        name='test',
+        col_datetime=-1,
+        col_open='open',
+        col_high='high',
+        col_low='low',
+        col_close='close',
+        col_volume='volume',
+        col_turnover='total_turnover',
+        datetime_format="%Y-%m-%d %H:%M:%S")
+    a = 1

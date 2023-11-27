@@ -7,9 +7,11 @@
 # @Description:
 
 
-from preprocessors.preprocess import LobTimePreprocessor
-from strategies.base_strategy import BaseStrategy
-from support import *
+from backtest.preprocessors.preprocess import LobTimePreprocessor
+from backtest.strategies.base_strategy import BaseStrategy
+from backtest.support import *
+import pandas as pd
+import numpy as np
 
 
 class LobStrategy(BaseStrategy):
@@ -231,7 +233,7 @@ class LobStrategy(BaseStrategy):
     #     print(all_stats_winrate)
     #     return all_stats, all_stats_winrate
 
-    def generate_signals(self, y_pred: pd.Series, stk_name: str, threshold=0.0008, drift=0) -> 'pd.DataFrame':
+    def generate_signals(self, y_pred: pd.Series, stk_name: str, threshold=0.0008, drift=0) -> pd.DataFrame:
         """
         输出需要统一范式，即(timestamp,stk_name,side,type,price,volume)
 

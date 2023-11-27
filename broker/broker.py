@@ -10,53 +10,57 @@ from typing import Dict, List, Union
 
 from collections import defaultdict
 
-from support import *
-from config import *
-from scripts.order_book_reconstruction import Order
+from backtest.support import *
+from backtest.config import *
+from backtest.broker.orders import Order
+from backtest.broker.trades import Trade
+from backtest.recorders.transactions import Transaction
+from backtest.recorders.position import Position
+from backtest.recorders.portfolio import *
 
 
-class OrderTypeIntError(TypeError):
-    def __init__(self, *arg):
-        self.args = arg
+# class OrderTypeIntError(TypeError):
+#     def __init__(self, *arg):
+#         self.args = arg
 
 
-class Trade(object):
-    def __init__(self,
-                 seq,
-                 bid_seq,
-                 ask_seq,
-                 quantity,
-                 price,
-                 timestamp):
-        self.seq = seq
-        self.bid_seq = bid_seq
-        self.ask_seq = ask_seq
-        self.quantity = quantity
-        self.price = price
-        self.timestamp = timestamp
-
-    def __str__(self):
-        return str(self.__dict__)
-
-
-# class Order(object):
+# class Trade(object):
 #     def __init__(self,
 #                  seq,
-#                  timestamp,
-#                  side,
-#                  type_,
+#                  bid_seq,
+#                  ask_seq,
 #                  quantity,
 #                  price,
-#                  filled_quantity=0,
-#                  filled_amount=0,
-#                  last_traded_timestamp=pd.NaT,
-#                  canceled_timestamp=pd.NaT,
-#                  canceled_seq=0,
-#                  stop_price=None,
-#                  sl_price=None,
-#                  tp_price=None,
-#                  trade_seq=None,
-#                  ):
+#                  timestamp):
+#         self.seq = seq
+#         self.bid_seq = bid_seq
+#         self.ask_seq = ask_seq
+#         self.quantity = quantity
+#         self.price = price
+#         self.timestamp = timestamp
+#
+#     def __str__(self):
+#         return str(self.__dict__)
+
+# class Order(object):
+#     def __init__(self, seq, timestamp, side, type_, quantity, price, filled_quantity=0, filled_amount=0,
+#                  last_traded_timestamp=pd.NaT, canceled_timestamp=pd.NaT, canceled_seq=0):
+#         """
+#
+#         Parameters
+#         ----------
+#         seq :
+#         timestamp :
+#         side :
+#         type_ :
+#         quantity :
+#         price :
+#         filled_quantity :
+#         filled_amount :
+#         last_traded_timestamp :
+#         canceled_timestamp :
+#         canceled_seq :
+#         """
 #         self.seq = seq
 #         self.timestamp = timestamp
 #         self.side = side
@@ -64,18 +68,13 @@ class Trade(object):
 #         self.quantity = quantity
 #         self.price = price
 #         self.filled_quantity = filled_quantity
+#         self.can_filled = self.quantity - self.filled_quantity
 #         self.filled_amount = filled_amount
 #         self.last_traded_timestamp = last_traded_timestamp
 #         self.canceled_timestamp = canceled_timestamp
 #         self.canceled_seq = canceled_seq
 #         self.filled = False
 #         self.canceled = False
-#
-#         self.__stop_price = stop_price  # Order stop price for stop-limit/stop-market order, otherwise None if no stop was set, or the stop price has already been hit.
-#         self.__sl_price = sl_price  # A stop-loss price at which, if set, a new contingent stop-market order will be placed upon the Trade following this order's execution. See also Trade.sl.
-#         self.__tp_price = tp_price  # A take-profit price at which, if set, a new contingent limit order will be placed upon the Trade following this order's execution. See also Trade.tp.
-#         self.__parent_trade = trade_seq
-#         # self.__tag = tag
 #
 #     def __str__(self):
 #         return "seq-{}, {}: {} @ {}. side={},type={},filled_quantity={},filled_amount={},\n last_traded_timestamp={},canceled_timestamp={},canceled_seq={}\n".format(
@@ -84,7 +83,19 @@ class Trade(object):
 #             self.canceled_timestamp, self.canceled_seq)
 #
 #     def fill_quantity(self, timestamp, quantity, price):
-#         """全部/部分fill放在orderbook对象中处理，进而保证函数功能的原子性"""
+#         """
+#         全部/部分fill放在orderbook对象中处理，进而保证函数功能的原子性
+#
+#         Parameters
+#         ----------
+#         timestamp :
+#         quantity :
+#         price :
+#
+#         Returns
+#         -------
+#
+#         """
 #         if self.filled:
 #             raise Exception('already filled ' + self.__str__())
 #         if self.canceled:
@@ -92,14 +103,16 @@ class Trade(object):
 #         #         if self.type==OrderTypeInt['limit'].value:
 #         #             assert self.price==price
 #
-#         assert quantity <= self.can_filled()
+#         assert quantity <= self.can_filled
 #         self.last_traded_timestamp = timestamp
 #         self.filled_quantity += quantity
 #         self.filled_amount += price * quantity
+#         self.can_filled -= quantity
 #         # 市价单平均价格会变化
 #         if self.type == OrderTypeInt['market'].value:
 #             self.price = self.filled_amount / self.filled_quantity  # 平均价格
 #         self._set_filled()
+#         return quantity
 #
 #     def _set_filled(self):
 #         if self.quantity == self.filled_quantity:
@@ -112,9 +125,9 @@ class Trade(object):
 #         else:
 #             return False
 #
-#     def can_filled(self):
-#         """quantity to fill"""
-#         return self.quantity - self.filled_quantity
+#     # def can_filled(self):
+#     #     """quantity to fill"""
+#     #     return self.quantity - self.filled_quantity
 #
 #     def cancel(self, canceled_seq, canceled_timestamp):
 #         self.canceled_seq = canceled_seq
@@ -124,69 +137,68 @@ class Trade(object):
 #     def to_dict(self):
 #         return self.__dict__
 
+# class Transaction(object):
+#     def __init__(self):
+#         pass
 
-class Transaction(object):
-    def __init__(self):
-        pass
 
-
-class Position:
-    """
-    only for assets like stocks or options, but not for cash
-    """
-
-    # def __init__(self, broker: 'Broker'):
-    #     self.__broker = broker
-
-    def __init__(self, kind: str = 'stock'):
-        self.kind = kind
-
-    def __bool__(self):
-        return self.size != 0
-
-    def add(self, trade):
-        # self.stk_name=stk_name
-        # self.volume=volume # long if positive, short if negative
-        # self.price=price
-        pass
-
-    @property
-    def size(self) -> float:
-        """Position size in units of asset. Negative if position is short."""
-        return sum(trade.size for trade in self.__broker.trades)
-
-    @property
-    def pl(self) -> float:
-        """Profit (positive) or loss (negative) of the current position in _cash units."""
-        return sum(trade.pl for trade in self.__broker.trades)
-
-    @property
-    def pl_pct(self) -> float:
-        """Profit (positive) or loss (negative) of the current position in percent."""
-        weights = np.abs([trade.size for trade in self.__broker.trades])
-        weights = weights / weights.sum()
-        pl_pcts = np.array([trade.pl_pct for trade in self.__broker.trades])
-        return (pl_pcts * weights).sum()
-
-    @property
-    def is_long(self) -> bool:
-        """True if the position is long (position size is positive)."""
-        return self.size > 0
-
-    @property
-    def is_short(self) -> bool:
-        """True if the position is short (position size is negative)."""
-        return self.size < 0
-
-    def close(self, portion: float = 1.):
-        """
-        Close portion of position by closing `portion` of each active trade. See `Trade.close`.
-        """
-        for trade in self.__broker.trades:
-            trade.close(portion)
-
-    def __repr__(self):
-        return f'<Position: {self.size} ({len(self.__broker.trades)} trades)>'
+# class Position:
+#     """
+#     only for assets like stocks or options, but not for cash
+#     """
+#
+#     # def __init__(self, broker: 'Broker'):
+#     #     self.__broker = broker
+#
+#     def __init__(self, kind: str = 'stock'):
+#         self.kind = kind
+#
+#     def __bool__(self):
+#         return self.size != 0
+#
+#     def add(self, trade):
+#         # self.stk_name=stk_name
+#         # self.volume=volume # long if positive, short if negative
+#         # self.price=price
+#         pass
+#
+#     @property
+#     def size(self) -> float:
+#         """Position size in units of asset. Negative if position is short."""
+#         return sum(trade.size for trade in self.__broker.trades)
+#
+#     @property
+#     def pl(self) -> float:
+#         """Profit (positive) or loss (negative) of the current position in _cash units."""
+#         return sum(trade.pl for trade in self.__broker.trades)
+#
+#     @property
+#     def pl_pct(self) -> float:
+#         """Profit (positive) or loss (negative) of the current position in percent."""
+#         weights = np.abs([trade.size for trade in self.__broker.trades])
+#         weights = weights / weights.sum()
+#         pl_pcts = np.array([trade.pl_pct for trade in self.__broker.trades])
+#         return (pl_pcts * weights).sum()
+#
+#     @property
+#     def is_long(self) -> bool:
+#         """True if the position is long (position size is positive)."""
+#         return self.size > 0
+#
+#     @property
+#     def is_short(self) -> bool:
+#         """True if the position is short (position size is negative)."""
+#         return self.size < 0
+#
+#     def close(self, portion: float = 1.):
+#         """
+#         Close portion of position by closing `portion` of each active trade. See `Trade.close`.
+#         """
+#         for trade in self.__broker.trades:
+#             trade.close(portion)
+#
+#     def __repr__(self):
+#         return f'<Position: {self.size} ({len(self.__broker.trades)} trades)>'
 
 
 class BaseBroker(object):
@@ -379,7 +391,7 @@ class Broker(BaseBroker):
         revenue_dict = defaultdict(dict)  # dict of dict
         ret_dict = defaultdict(dict)  # dict of dict
         aligned_signals_dict = defaultdict(dict)  # dict of dict
-        sig_dates = sorted(signals['timestamp'].apply(lambda x: str(x.date()).replace('-','')).unique())
+        sig_dates = sorted(signals['timestamp'].apply(lambda x: str(x.date()).replace('-', '')).unique())
         sig_stk_names = sorted(signals['stk_name'].unique())
 
         for sig_date in sig_dates:
