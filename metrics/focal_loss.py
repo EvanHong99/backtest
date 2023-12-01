@@ -4,7 +4,7 @@
 # @Author   : EvanHong
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
-# @Description:
+# @Description: 需要将此文件进行解耦，因为这一部分应该归于模型训练阶段，而非backtest
 import os
 import sys
 

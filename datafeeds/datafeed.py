@@ -15,7 +15,7 @@ from backtest.preprocessors.preprocess import LobTimePreprocessor
 import pickle
 import h5py
 import pandas as pd
-from backtest.datafeeds.namespaces import BaseNamespace, PandasNamespace
+from backtest.datafeeds.mkt_data_namespace import BaseMktDataNamespace, PandasOHLCMktDataNamespace,PandasLobMktDataNamespace
 from typing import Union
 
 
@@ -29,11 +29,13 @@ class BaseDataFeed(object):
         self.namespace = None
 
 
-class PandasDataFeed(BaseDataFeed):
+class PandasOHLCDataFeed(BaseDataFeed):
 
     def __init__(self,
                  name='PandasDataFeed',
                  col_datetime: Union[int,str] = -1,
+                 col_date:Union[str]=None,
+                 symbol:Union[str]=None,
                  col_open: str = None,
                  col_high: str = None,
                  col_low: str = None,
@@ -63,7 +65,9 @@ class PandasDataFeed(BaseDataFeed):
         """
         super().__init__(args, kwargs)
         self.name = name
+        self.col_symbol=symbol
         self.col_datetime = col_datetime
+        self.col_date = col_date
         self.col_open = col_open
         self.col_high = col_high
         self.col_low = col_low
@@ -71,12 +75,12 @@ class PandasDataFeed(BaseDataFeed):
         self.col_volume = col_volume
         self.col_turnover = col_turnover
         self.datetime_format = datetime_format
-        self.col_mapper = PandasNamespace()  # 将外部不统一的列名统一到框架下的命名空间
+        self.namespace = PandasOHLCMktDataNamespace()  # 将外部不统一的列名统一到框架下的命名空间
         self.data = None
         if data is not None:
-            self.align_data(data)
+            self.load_data(data)
 
-    def align_data(self, df: pd.DataFrame):
+    def load_data(self, df: pd.DataFrame):
         """
         根据init中标明的列，将df整理成标准化的数据
         Parameters
@@ -100,17 +104,17 @@ class PandasDataFeed(BaseDataFeed):
         self.data = df.sort_index()
 
         # 将各个列补全
-        colidx_list = [self.col_open, self.col_high, self.col_low, self.col_close, self.col_volume, self.col_turnover]
-        for colname, colidx in zip(['open', 'high', 'low', 'close', 'volume', 'turnover'], colidx_list):
+        colidx_list = [self.col_datetime,self.col_date,self.col_symbol, self.col_open, self.col_high, self.col_low, self.col_close, self.col_volume, self.col_turnover]
+        for colname, colidx in zip(['datetime','date','symbol','open_', 'high', 'low', 'close', 'volume', 'turnover'], colidx_list):
             if colidx is None:
-                self.col_mapper.__delattr__(colname)
+                self.namespace.__delattr__(colname)
             else:
-                self.col_mapper.__setattr__(colname, colidx)
+                self.namespace.__setattr__(colname, colidx)
         for k, v in self.kwargs.items():
             if v not in columns:
                 logging.warning(f"unmatched column name and kwargs v: {v} columns: {columns}")
             else:
-                self.col_mapper.__setattr__(k, v)
+                self.namespace.__setattr__(k, v)
 
     @property
     def index(self):
@@ -121,28 +125,36 @@ class PandasDataFeed(BaseDataFeed):
         return self.data.index
 
     @property
+    def date(self):
+        return self.data.loc[:,self.namespace.date]
+
+    @property
+    def symbol(self):
+        return self.data.loc[:,self.namespace.symbol]
+
+    @property
     def open(self):
-        return self.data.loc[:, self.col_mapper.open]
+        return self.data.loc[:, self.namespace.open_]
 
     @property
     def high(self):
-        return self.data.loc[:, self.col_mapper.high]
+        return self.data.loc[:, self.namespace.high]
 
     @property
     def low(self):
-        return self.data.loc[:, self.col_mapper.low]
+        return self.data.loc[:, self.namespace.low]
 
     @property
     def close(self):
-        return self.data.loc[:, self.col_mapper.close]
+        return self.data.loc[:, self.namespace.close]
 
     @property
     def volume(self):
-        return self.data.loc[:, self.col_mapper.volume]
+        return self.data.loc[:, self.namespace.volume]
 
     @property
     def turnover(self):
-        return self.data.loc[:, self.col_mapper.turnover]
+        return self.data.loc[:, self.namespace.turnover]
 
 
 class LobModelFeed(BaseDataFeed):
@@ -318,7 +330,7 @@ class LobDataFeed(BaseDataFeed):
 if __name__ == '__main__':
     df = pd.read_csv(
         '/Users/hongyifan/Desktop/work/internship/caitong_securities/2023.10.23股指日内短期预测/data/data_5min_科创50.csv',index_col=1)
-    datafeed = PandasDataFeed(
+    datafeed = PandasOHLCDataFeed(
         data=df,
         name='test',
         col_datetime=-1,

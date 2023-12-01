@@ -6,10 +6,10 @@
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
 
-
 from backtest.preprocessors.preprocess import LobTimePreprocessor
 from backtest.strategies.base_strategy import BaseStrategy
-from backtest.support import *
+from backtest.predefined.macro import OrderTypeInt,TypeAction
+from typing import Union
 import pandas as pd
 import numpy as np
 
@@ -49,6 +49,8 @@ class LobStrategy(BaseStrategy):
         """
         super().__init__(*args, **kwargs)
         self.max_close_timedelta = max_close_timedelta
+        self.threshold=None
+        self.drift=None
         # self.clean_obh_dict = None
         # self.models = []
         # self.model_root = model_root
@@ -233,59 +235,63 @@ class LobStrategy(BaseStrategy):
     #     print(all_stats_winrate)
     #     return all_stats, all_stats_winrate
 
+    def calc_side(self,pred_ret):
+        """
+
+        :param pred_ret:
+        :param threshold:
+        :param drift: 用于修正偏度至正态
+        :return:
+        """
+        if pred_ret > self.drift + self.threshold:
+            return 1
+        elif pred_ret < self.drift - self.threshold:
+            return -1
+        else:
+            return 0
+
+    def calc_type_(self, pred_ret):
+        return OrderTypeInt.market.value
+
+    def calc_price_limit(self,pred_ret):
+        return 0
+
+    def calc_quantity(self, pred_ret):
+        return 100
+
+    def calc_close_time(self,pred_ret):
+        return pred_ret + self.max_close_timedelta
+
+
     def generate_signals(self, y_pred: pd.Series, stk_name: str, threshold=0.0008, drift=0) -> pd.DataFrame:
         """
         输出需要统一范式，即(timestamp,stk_name,side,type,price,volume)
 
         :return:
         """
+        self.threshold=threshold
+        self.drift=drift
 
-        def calc_side(pred_ret):
-            """
-
-            :param pred_ret:
-            :param threshold:
-            :param drift: 用于修正偏度至正态
-            :return:
-            """
-            if pred_ret > drift + threshold:
-                return 1
-            elif pred_ret < drift - threshold:
-                return -1
-            else:
-                return 0
-
-        def calc_type(pred_ret):
-            return OrderTypeInt.market.value
-
-        def calc_price_limit(pred_ret):
-            return 0
-
-        def calc_volume(pred_ret):
-            return 100
-
-        def calc_close_time(pred_ret):
-            return pred_ret + self.max_close_timedelta
 
         # 计算开仓信号
         signals = y_pred.to_frame().agg([
-            calc_side,
-            calc_type,
-            calc_price_limit,
-            calc_volume
+            self.calc_side,
+            self.calc_type_,
+            self.calc_price_limit,
+            self.calc_quantity
         ])
         signals.index = y_pred.index  # 不做这一步出来的index很怪，会有一个后缀
         signals.columns = ['side', 'type', 'price_limit', 'volume']
         signals.loc[:, 'stk_name'] = [stk_name] * len(signals)
         signals.loc[:, 'timestamp'] = y_pred.index
-        signals.loc[:, 'action'] = ['open'] * len(signals)
+        signals.loc[:, 'action'] = [TypeAction.open.name] * len(signals)
         signals.loc[:, 'seq'] = list(range(len(signals)))  # 平仓signal和开仓公用
         # todo 去除连续出现的信号
 
         # 计算平仓信号
         close_signals = signals.copy(deep=True)
-        close_signals.loc[:, 'timestamp'] = calc_close_time(signals['timestamp'])
-        close_signals.loc[:, 'action'] = ['close'] * len(close_signals)
+        close_signals.loc[:, 'timestamp'] = self.calc_close_time(signals['timestamp'])
+        close_signals.loc[:, 'action'] = [TypeAction.close.name] * len(close_signals)
 
         # 拼接数据
         signals = pd.concat([signals, close_signals], axis=0)

@@ -17,6 +17,7 @@ from backtest.broker.trades import Trade
 from backtest.recorders.transactions import Transaction
 from backtest.recorders.position import Position
 from backtest.recorders.portfolio import *
+from backtest.datafeeds.datafeed import PandasOHLCDataFeed
 
 
 # class OrderTypeIntError(TypeError):
@@ -250,7 +251,7 @@ class Broker(BaseBroker):
     def __repr__(self):
         return f'<Broker: {self._cash:.0f}{self.position.pl:+.1f} ({len(self.trades)} trades)>'
 
-    def load_data(self, clean_obh_dict: Union[dict, defaultdict] = None):
+    def load_data(self, clean_obh_dict: Union[dict, defaultdict,pd.DataFrame,PandasOHLCDataFeed] = None):
         """
 
         :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
@@ -377,30 +378,32 @@ class Broker(BaseBroker):
         9:30:00.02	1947.87	1947.44	1947	1946	1945	1943	1942.7	1942.6	1942	1941	100	100	400	700	900	900	2290	100	100	100	1943
         9:30:00.03	1947.87	1947.44	1947	1946	1945	1943	1942.7	1942.6	1942	1941	100	100	400	700	900	900	2290	100	100	100	1943
         >>> signals
-        timestamp	side	type	price_limit	volume	stk_name	action	seq
-        2022/6/29 9:34	1	77	0	100	贵州茅台	open	0
-        2022/6/29 9:34	-1	77	0	100	中信证券	open	0
-        2022/6/29 9:35	-1	77	0	100	贵州茅台	open	1
-        2022/6/29 9:35	1	77	0	100	贵州茅台	close	0
-        2022/6/29 9:35	1	77	0	100	中信证券	open	1
-        2022/6/29 9:35	-1	77	0	100	中信证券	close	0
-        2022/6/29 9:36	-1	77	0	100	贵州茅台	close	1
-        2022/6/29 9:36	1	77	0	100	中信证券	close	1
+        datetime	side	type	price_limit volume  stk_name       action	   seq
+        2022/6/29 9:34	1	77	    0	        100     贵州茅台        open        0
+        2022/6/29 9:34	-1	77	    0	        100     中信证券        open        0
+        2022/6/29 9:35	-1	77	    0	        100     贵州茅台        open        1
+        2022/6/29 9:35	1	77	    0	        100     贵州茅台        close       0
+        2022/6/29 9:35	1	77	    0	        100     中信证券        open        1
+        2022/6/29 9:35	-1	77	    0	        100     中信证券        close       0
+        2022/6/29 9:36	-1	77	    0	        100     贵州茅台        close       1
+        2022/6/29 9:36	1	77	    0	        100     中信证券        close       1
         """
         if len(signals) == 0: raise ValueError("has no signals")
         revenue_dict = defaultdict(dict)  # dict of dict
         ret_dict = defaultdict(dict)  # dict of dict
         aligned_signals_dict = defaultdict(dict)  # dict of dict
-        sig_dates = sorted(signals['timestamp'].apply(lambda x: str(x.date()).replace('-', '')).unique())
+        signals['date']=signals['datetime'].apply(lambda x: str(x.date()))
+        sig_dates = sorted(signals['date'].unique())
         sig_stk_names = sorted(signals['stk_name'].unique())
 
         for sig_date in sig_dates:
             for sig_stk_name in sig_stk_names:
+                # 筛选出某一天的signals
                 if use_dates is not None and sig_date not in use_dates: continue
                 if use_stk_names is not None and sig_stk_name not in use_stk_names: continue
                 print(f"broker processes {sig_date} {sig_stk_name}")
 
-                _signals = signals.loc[np.logical_and(sig_date == sig_dates, signals['stk_name'] == sig_stk_name)]
+                _signals = signals.loc[np.logical_and(sig_date == signals['date'], signals['stk_name'] == sig_stk_name)]
 
                 revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name)
 
@@ -610,3 +613,220 @@ class Broker(BaseBroker):
     #             print(self._cash, self.transactions, self.positions, self.net_value)
 
     ############## 旧代码 deprecated ################
+
+
+class StockBroker(BaseBroker):
+    def __init__(self,
+                 data: Union[dict, defaultdict] = None,
+                 cash=1e6,
+                 commission=1e-3,
+                 exclusive_orders=[],
+                 *args, **kwargs):
+        """
+
+        Parameters
+        ----------
+        data :
+        cash :
+        commission :
+        exclusive_orders :
+            一律不接受相关标的的order
+        args :
+        kwargs :
+        """
+
+        super().__init__(*args, **kwargs)
+
+        self.data = data
+
+        self._cash = cash
+        self._commission = commission
+        self.usage_limit_pct = 0.01
+        self.max_qty = 2e4
+        self.verbose = False
+        self.cash_from_short = 0
+        self.slippage = 0
+
+        # self.transactions = pd.DataFrame(['timestamp','type','pair_codes', 'qty','price','status']).set_index('timestamp')
+        # self.positions=pd.DataFrame(columns=['pair_codes', 'qty']).set_index('pair_codes') #shares
+        self.seq = 0
+        self.transactions = {}
+        self.positions = defaultdict(int)
+        self.net_value = pd.DataFrame(columns=['timestamp', 'netvalue']).set_index('timestamp')
+        self.order_pending = []
+
+        self.orders: Dict[Order] = {}
+        self.trades: Dict[Trade] = {}
+        self.closed_orders: Dict[Order] = {}
+        self.closed_trades: Dict[Trade] = {}
+        self.position = Position(kind='stock')
+
+        # self._leverage = 1 / margin
+        # self._trade_on_close = trade_on_close
+        # self._hedging = hedging
+        self._exclusive_orders = exclusive_orders
+
+    def __repr__(self):
+        return f'<Broker: {self._cash:.0f}{self.position.pl:+.1f} ({len(self.trades)} trades)>'
+
+    def load_data(self, clean_obh_dict: Union[dict, defaultdict,PandasOHLCDataFeed] = None):
+        """
+
+        :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
+        :return:
+        """
+        self.clean_obh_dict = clean_obh_dict
+        if (self.clean_obh_dict is None) or (self.clean_obh_dict == 0):
+            logging.warning("self.clean_obh_dict has no data", UserWarning)
+
+    def execute(self, signal):
+        """
+        执行单个指令
+        :param signal: 指令，即signal df中的信息
+        :return:
+        """
+        side = signal['side']
+        type = signal['type']
+        price_limit = signal['price_limit']
+        volume = signal['volume']
+        stk_name = signal['stk_name']
+        timestamp = signal['timestamp']
+        action = signal['action']
+        seq = signal['seq']
+
+        if type == OrderTypeInt.market.value:  # 市价单，fixme 最优五档？？？
+            if side == 1:  # for long order
+                pass
+            elif side == -1:  # for short order
+                pass
+            elif side == 0:
+                pass
+            else:
+                raise NotImplementedError("side not implemented")
+
+    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str):
+        """
+        批量处理信号，但仅针对单日单只个股信号
+        Parameters
+        ----------
+        _signals : pd.DataFrame
+            单日单只个股信号
+        date
+        stk_name
+
+        Returns
+        -------
+
+        """
+        # 只有side才是决定是否开仓的真正信号，此处的open close用于标识开平仓时间
+        _open_signals = _signals.loc[_signals['action'] == 'open']
+        _close_signals = _signals.loc[_signals['action'] == 'close']
+        _aligned_signals = pd.merge(_open_signals, _close_signals, how='inner', left_on='seq', right_on='seq',
+                                    suffixes=('_open', '_close'))
+
+        _aligned_signals_long = _aligned_signals.loc[_aligned_signals['side_open'] == 1]
+        _aligned_signals_short = _aligned_signals.loc[_aligned_signals['side_open'] == -1]
+        _aligned_signals_hold = _aligned_signals.loc[_aligned_signals['side_open'] == 0]
+
+        temp = self.clean_obh_dict[date][stk_name].asfreq(freq=min_freq, method='ffill')
+        # b1p = temp[str(LobColTemplate('b', 1, 'p'))]
+        # b1v = temp[str(LobColTemplate('b', 1, 'v'))]
+        # a1p = temp[str(LobColTemplate('a', 1, 'p'))]
+        # a1v = temp[str(LobColTemplate('a', 1, 'v'))]
+        current = temp[str(LobColTemplate().current)]
+
+        # 计算收益，如果为正则代表收益为正
+        long_open_time = _aligned_signals_long['datetime_open'].values
+        short_open_time = _aligned_signals_short['datetime_open'].values
+        hold_open_time = _aligned_signals_hold['datetime_open'].values
+        long_close_time = _aligned_signals_long['datetime_close'].values
+        short_close_time = _aligned_signals_short['datetime_close'].values
+        hold_close_time = _aligned_signals_hold['datetime_close'].values
+
+        long_revenue = current.loc[long_close_time].values - current.loc[long_open_time].values
+        long_ret = np.log(current.loc[long_close_time].values / current.loc[long_open_time].values)
+        short_revenue = current.loc[short_open_time].values - current.loc[short_close_time].values
+        short_ret = np.log(current.loc[short_open_time].values / current.loc[short_close_time].values)
+
+        long_revenue = pd.Series(long_revenue, index=long_open_time)
+        long_ret = pd.Series(long_ret, index=long_open_time)
+        short_revenue = pd.Series(short_revenue, index=short_open_time)
+        short_ret = pd.Series(short_ret, index=short_open_time)
+        hold_revenue = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
+        hold_ret = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
+
+        revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0)
+        ret = pd.concat([long_ret, short_ret, hold_ret], axis=0)
+        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold], axis=0)
+
+        return revenue, ret, _aligned_signals
+
+    def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None):
+        """
+        批量执行指令，无法画出净值曲线
+
+        ----
+        需要提前使用Broker.load_data()函数买卖量价信息历史（至少1档）存于Broker.clean_obh_dict <{date:{stk_name:ret <pd.DataFrame>}}>
+
+        Parameters
+        ----------
+        signals : pd.DataFrame
+            columes: [timestamp	side	type	price_limit	volume	stk_name	action	seq]
+            stk_name+seq用于唯一识别一次交易，可以有open和close两种actions，side==1<->long，side==-1<->short，side==0<->no action（优先级高于action）
+            type为订单类型，服从米筐订单类型定义，如limit order / market order，具体查看support.OrderTypeInt。todo: 更加通用化的type表示形式
+        use_dates: list of str
+            回测日期
+        use_stk_names: list of str
+            回测股票简称（中文），如`"贵州茅台"`
+
+        Returns
+        -------
+        revenue_dict:dict, {stk_name: revenue}
+            收益
+        ret_dict:dict, {stk_name: revenue}
+            收益率
+        aligned_signals_dict: deprecated
+
+        Examples
+        --------
+        >>> self.clean_ohb_dict['2022-06-29']['贵州茅台']
+                a5_p	a4_p	a3_p	a2_p	a1_p	b1_p	b2_p	b3_p	b4_p	b5_p	a5_v	a4_v	a3_v	a2_v	a1_v	b1_v	b2_v	b3_v	b4_v	b5_v	current
+        9:30:00.00	1947.87	1947.44	1947	1946	1945	1942.7	1942.6	1942	1941	1940.95	100	100	400	300	900	2290	100	100	100	100	1945
+        9:30:00.01	1947.87	1947.44	1947	1946	1945	1942.7	1942.6	1942	1941	1940.95	100	100	400	300	900	2290	100	100	100	100	1945
+        9:30:00.02	1947.87	1947.44	1947	1946	1945	1943	1942.7	1942.6	1942	1941	100	100	400	700	900	900	2290	100	100	100	1943
+        9:30:00.03	1947.87	1947.44	1947	1946	1945	1943	1942.7	1942.6	1942	1941	100	100	400	700	900	900	2290	100	100	100	1943
+        >>> signals
+        datetime	side	type	price_limit volume  stk_name       action	   seq
+        2022/6/29 9:34	1	77	    0	        100     贵州茅台        open        0
+        2022/6/29 9:34	-1	77	    0	        100     中信证券        open        0
+        2022/6/29 9:35	-1	77	    0	        100     贵州茅台        open        1
+        2022/6/29 9:35	1	77	    0	        100     贵州茅台        close       0
+        2022/6/29 9:35	1	77	    0	        100     中信证券        open        1
+        2022/6/29 9:35	-1	77	    0	        100     中信证券        close       0
+        2022/6/29 9:36	-1	77	    0	        100     贵州茅台        close       1
+        2022/6/29 9:36	1	77	    0	        100     中信证券        close       1
+        """
+        if len(signals) == 0: raise ValueError("has no signals")
+        revenue_dict = defaultdict(dict)  # dict of dict
+        ret_dict = defaultdict(dict)  # dict of dict
+        aligned_signals_dict = defaultdict(dict)  # dict of dict
+        signals['date'] = signals['datetime'].apply(lambda x: str(x.date()))
+        sig_dates = sorted(signals['date'].unique())
+        sig_stk_names = sorted(signals['stk_name'].unique())
+
+        for sig_date in sig_dates:
+            for sig_stk_name in sig_stk_names:
+                # 筛选出某一天的signals
+                if use_dates is not None and sig_date not in use_dates: continue
+                if use_stk_names is not None and sig_stk_name not in use_stk_names: continue
+                print(f"broker processes {sig_date} {sig_stk_name}")
+
+                _signals = signals.loc[np.logical_and(sig_date == signals['date'], signals['stk_name'] == sig_stk_name)]
+
+                revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name)
+
+                revenue_dict[sig_date][sig_stk_name] = revenue
+                ret_dict[sig_date][sig_stk_name] = ret
+                aligned_signals_dict[sig_date][sig_stk_name] = _aligned_signals
+
+        return revenue_dict, ret_dict, aligned_signals_dict

@@ -257,8 +257,8 @@ class OrderBook(object):
             order_ask.fill_quantity(timestamp, can_filled, price)
 
             # 更新collections
-            self._sub_pv_dict(self.pv_dict_bid, order_bid.price, can_filled)
-            self._sub_pv_dict(self.pv_dict_ask, order_ask.price, can_filled)
+            self._sub_pv_dict(self.pv_dict_bid, order_bid.price_limit, can_filled)
+            self._sub_pv_dict(self.pv_dict_ask, order_ask.price_limit, can_filled)
             # assert self.pv_dict_bid.get(order_bid.price) is not None and self.pv_dict_bid.get(order_bid.price)>=can_filled
             # assert self.pv_dict_ask.get(order_ask.price) is not None and self.pv_dict_ask.get(order_ask.price)>=can_filled
             # self.pv_dict_bid[order_bid.price] -= can_filled
@@ -312,39 +312,39 @@ class OrderBook(object):
         """
         self.order_queue_dict[order.seq] = order
         if is_counter_order:  # 只有对手方需要维护已经存储的信息，新的order可以直接在外部loop实现多笔交易
-            assert (order.type == OrderTypeInt.limit.value) or (order.type == OrderTypeInt.bop.value)
+            assert (order.type_ == OrderTypeInt.limit.value) or (order.type_ == OrderTypeInt.bop.value)
             if order.is_filled():
                 if order.side == OrderSideInt.ask.value:  # counter order is an ask
-                    order_queue_dict = self.book_ask[order.price]
+                    order_queue_dict = self.book_ask[order.price_limit]
                     order_queue_dict.pop(order.seq)
                     if len(order_queue_dict) == 0:
-                        self.book_ask.pop(order.price)
+                        self.book_ask.pop(order.price_limit)
                 else:
-                    order_queue_dict = self.book_bid[order.price]
+                    order_queue_dict = self.book_bid[order.price_limit]
                     order_queue_dict.pop(order.seq)
                     if len(order_queue_dict) == 0:
-                        self.book_bid.pop(order.price)
+                        self.book_bid.pop(order.price_limit)
             else:
                 if order.side == OrderSideInt.ask.value:  # counter order is an ask
-                    self.book_ask[order.price][order.seq] = order  # 更新信息
+                    self.book_ask[order.price_limit][order.seq] = order  # 更新信息
                 else:
-                    self.book_bid[order.price][order.seq] = order  # 更新信息
+                    self.book_bid[order.price_limit][order.seq] = order  # 更新信息
 
         else:
             # 一般在外面做append_to_book的逻辑，因为一个order可以在while中连续吃对手单
             pass
 
     def proc_bop_order(self, order):
-        assert order.type == OrderTypeInt.bop.value
+        assert order.type_ == OrderTypeInt.bop.value
         logging.warning(f"proc_limit_order")
         # 直接加入订单簿即可，因为不可能成交
-        order.price = self.get_best_ask() if order.side == OrderSideInt.ask.value else self.get_best_bid()
+        order.price_limit = self.get_best_ask() if order.side == OrderSideInt.ask.value else self.get_best_bid()
         self.append_to_book(order)
 
     def proc_limit_order(self, order, mkt_lmt=False):
-        assert order.type == OrderTypeInt.limit.value or mkt_lmt
+        assert order.type_ == OrderTypeInt.limit.value or mkt_lmt
         side = order.side
-        price = order.price
+        price = order.price_limit
         if side == OrderSideInt.bid.value:  # 撮合
             while price >= self.get_best_ask() and not order.is_filled():
                 best_ask_p = self.get_best_ask()
@@ -399,7 +399,7 @@ class OrderBook(object):
             销申报，以对手方价格为成交价，如与申报进
             入交易主机时集中申报簿中对手方所有申报队列依次成交能够使其完全成交的，则依次成交，否则申报全部自动撤销。
         """
-        assert order.type == OrderTypeInt.market.value
+        assert order.type_ == OrderTypeInt.market.value
         counter = 0
         side = order.side
         if side == OrderSideInt.bid.value:
@@ -461,7 +461,7 @@ class OrderBook(object):
             销申报，以对手方价格为成交价，如与申报进
             入交易主机时集中申报簿中对手方所有申报队列依次成交能够使其完全成交的，则依次成交，否则申报全部自动撤销。
         """
-        assert order.type == OrderTypeInt.market.value
+        assert order.type_ == OrderTypeInt.market.value
         # if self.exchange=='XSHG':
         counter = 0
         side = order.side
@@ -573,11 +573,11 @@ class OrderBook(object):
             3.3.6 本方最优价格申报进入交易主机时，集中申报簿中本方无申报的，申报自动撤销。
             其他市价申报类型进入交易主机时，集中申报簿中对手方无申报的，申报自动撤销。
         """
-        if order.type == OrderTypeInt.limit.value:
+        if order.type_ == OrderTypeInt.limit.value:
             self.proc_limit_order(order)
-        elif order.type == OrderTypeInt.bop.value:
+        elif order.type_ == OrderTypeInt.bop.value:
             self.proc_bop_order(order)
-        elif order.type == OrderTypeInt.market.value:
+        elif order.type_ == OrderTypeInt.market.value:
             self.proc_market_order(order)
         else:
             raise OrderTypeIntError('reconstruct OrderTypeInt error')

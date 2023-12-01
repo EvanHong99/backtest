@@ -7,6 +7,10 @@
 # @Description:
 
 from abc import abstractmethod
+from typing import Union
+
+from backtest.signals.base_signal import BaseSingleAssetSignal,MultiAssetSignal
+
 
 
 class BaseStrategy(object):
@@ -19,18 +23,36 @@ class BaseStrategy(object):
             self.__setattr__(key, value)
 
     @abstractmethod
-    def load_models(self, *args):
+    def load_data(self, *args, **kwargs):
+        pass
+    @abstractmethod
+    def calc_side(self,pred_ret):
         pass
 
     @abstractmethod
-    def load_data(self, *args):
+    def calc_type_(self, pred_ret):
+        pass
+
+
+    @abstractmethod
+    def calc_price_limit(self,pred_ret):
+        pass
+
+
+    @abstractmethod
+    def calc_quantity(self, pred_ret):
+        pass
+
+
+    @abstractmethod
+    def calc_close_time(self,pred_ret):
         pass
 
     @abstractmethod
-    def generate_signals(self, *args):
+    def generate_signals(self, *args, **kwargs)->Union[BaseSingleAssetSignal,MultiAssetSignal]:
         """
         输出需要统一范式，即(timestamp,side,type,price,volume)
-        :param args:
+
         :return:
         """
         pass

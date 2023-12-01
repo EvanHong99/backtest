@@ -20,20 +20,7 @@ import json
 import logging
 from typing import Union, Optional
 from abc import ABC,abstractmethod
-
-
-# import config # 在函数中import
-
-class OrderSideInt(Enum):
-    bid = 66  # 买
-    ask = 83  # 卖
-
-
-class OrderTypeInt(Enum):
-    limit = 76  # 限价单
-    market = 77  # 市价单
-    best_own = 85  # 本⽅最优
-    bop = 85  # 本⽅最优
+from backtest.predefined.macro import OrderSideInt,OrderTypeInt,Target,ColTemplate,LobColTemplate,RQLobTemplateCaitong
 
 def create_dirs(dir_list:list):
     for path in dir_list:
@@ -55,96 +42,6 @@ def fill_zero(symbol:str):
         return '0'*(6-len(symbol))+symbol
     else: return symbol
 
-class Target(Enum):
-    """
-    Attributes
-    ----------
-    ret:
-        current ret
-    mid_p_ret:
-        中间价的ret
-    vol:
-        middle price realized volatility
-    wap_ret:
-        wap ret
-    wap_vol:
-        wap realized volatility
-    """
-    ret = 0  # current ret
-    mid_p_ret = 1  # 预测中间价的ret
-    vol = 2  # middle price realized volatility
-    wap_ret = 3
-    wap_vol = 4
-    vol_chg=5 # 波动率的变化方向
-
-class ColTemplate(ABC):
-    """
-    column template
-    """
-
-    def __init__(self, side: str = None, level: int = None, target: str = None):
-        self.side = side
-        self.level = level
-        self.target = target
-        self.current = None
-        self.mid_price = None
-
-    @abstractmethod
-    def __str__(self):
-        pass
-
-    @abstractmethod
-    def __repr__(self):
-        pass
-
-class RQLobTemplateCaitong(ColTemplate):
-    """
-    column template for 财通. 数据源自于ricequant
-    """
-
-    def __init__(self, side: str = None, level: int = None, target: str = None):
-        """
-
-        Parameters
-        ----------
-        side : str
-            `a` for ask `b` for bid
-        level : int
-            1~5
-        target : str
-            `p`:`Price`,`v`:`Volume`
-        """
-        super().__init__(side,level,target)
-        self.current = 'current'
-        self.mid_price = 'mid_price'
-        self.mapper={'a':'Buy',
-                     'b':'Sell',
-                     'p':'Price',
-                     'v':'Volume'}
-
-    def __str__(self):
-        return "{:s}{:s}{:02d}".format(self.mapper[self.side],self.mapper[self.target],self.level)
-
-    def __repr__(self):
-        return self.__str__()
-
-class LobColTemplate(object):
-    """
-    column template for 海通. 数据源自于ricequant
-    """
-
-    def __init__(self, side: str = None, level: int = None, target: str = None):
-        self.side = side
-        self.level = level
-        self.target = target
-        self.current = 'current'
-        self.mid_price = 'mid_price'
-
-    def __str__(self):
-        return f"{self.side}{self.level}_{self.target}"
-
-    def __repr__(self):
-        return self.__str__()
 
 
 def get_order_details(data_root, date, symbol):
