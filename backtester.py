@@ -845,8 +845,13 @@ class SingleAssetBackTester(BaseTester):
 
                 # 批量交易
                 revenue_dict, ret_dict, aligned_signals_dict = self.broker.batch_execute(signals, [date],
-                                                                                         self.stk_names)
-                self.recorder.revenue_dict.update(revenue_dict), self.recorder.ret_dict.update(ret_dict), self.recorder.aligned_signals_dict.update(aligned_signals_dict)
+                                                                                         self.stk_names,
+                                                                                         commission=self.broker.commission)
+                self.recorder.revenue_dict.update(revenue_dict)
+                self.recorder.ret_dict.update(ret_dict)
+                self.recorder.aligned_signals_dict.update(aligned_signals_dict)
+                self.recorder.res_dict[date][stk_name] = (revenue_dict, ret_dict, aligned_signals_dict)
+
                 stat_revenue = self.statistics.stat_winrate(revenue_dict[date][stk_name],
                                                             aligned_signals_dict[date][stk_name]['side_open'],
                                                             counterpart=True, params=None)
@@ -856,7 +861,6 @@ class SingleAssetBackTester(BaseTester):
 
                 stat_revenue.to_csv(save_root + f"{date}_{stk_name}_stat_revenue.csv")
                 stat_ret.to_csv(save_root + f"{date}_{stk_name}_stat_ret.csv")
-
 
         return self.recorder.res_dict
 

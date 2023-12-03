@@ -286,7 +286,7 @@ class Broker(BaseBroker):
             else:
                 raise NotImplementedError("side not implemented")
 
-    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str):
+    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str,commission:float):
         """
         批量处理信号，但仅针对单日单只个股信号
         Parameters
@@ -337,9 +337,9 @@ class Broker(BaseBroker):
         hold_revenue = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
         hold_ret = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
 
-        revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0)
-        ret = pd.concat([long_ret, short_ret, hold_ret], axis=0)
-        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold], axis=0)
+        revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0).sort_index()
+        ret = pd.concat([long_ret, short_ret, hold_ret], axis=0).sort_index()
+        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold], axis=0).sort_index()
 
         return revenue, ret, _aligned_signals
 
@@ -640,7 +640,7 @@ class StockBroker(BaseBroker):
         self.data = data
 
         self._cash = cash
-        self._commission = commission
+        self.commission = commission
         self.usage_limit_pct = 0.01
         self.max_qty = 2e4
         self.verbose = False
@@ -704,7 +704,7 @@ class StockBroker(BaseBroker):
             else:
                 raise NotImplementedError("side not implemented")
 
-    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str):
+    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str,commission=0):
         """
         批量处理信号，但仅针对单日单只个股信号
         Parameters
@@ -761,7 +761,7 @@ class StockBroker(BaseBroker):
 
         return revenue, ret, _aligned_signals
 
-    def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None):
+    def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None,commission=0):
         """
         批量执行指令，无法画出净值曲线
 
@@ -814,6 +814,7 @@ class StockBroker(BaseBroker):
         sig_dates = sorted(signals['date'].unique())
         sig_stk_names = sorted(signals['stk_name'].unique())
 
+        logging.warning("TODO: 尚未加入commission")
         for sig_date in sig_dates:
             for sig_stk_name in sig_stk_names:
                 # 筛选出某一天的signals
@@ -823,7 +824,7 @@ class StockBroker(BaseBroker):
 
                 _signals = signals.loc[np.logical_and(sig_date == signals['date'], signals['stk_name'] == sig_stk_name)]
 
-                revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name)
+                revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name,commission=commission)
 
                 revenue_dict[sig_date][sig_stk_name] = revenue
                 ret_dict[sig_date][sig_stk_name] = ret

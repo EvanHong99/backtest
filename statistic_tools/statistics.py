@@ -25,18 +25,18 @@ class ClassificationStatistics(BaseStatistics):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     @staticmethod
-    def calc_precision(pred_res, target):
-        return np.sum(np.logical_and(pred_res['y_pred'] == target, pred_res['y_true'] == target)) / np.sum(
-            pred_res['y_pred'] == target)
+    def calc_precision(y_true,y_pred, target):
+        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(
+            y_pred == target)
 
     @staticmethod
-    def calc_recall(pred_res, target):
-        return np.sum(np.logical_and(pred_res['y_pred'] == target, pred_res['y_true'] == target)) / np.sum(
-            pred_res['y_true'] == target)
+    def calc_recall(y_true,y_pred, target):
+        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(
+            y_true == target)
 
     @staticmethod
-    def calc_confusion_matrix(pred_res):
-        return confusion_matrix(pred_res['y_true'],pred_res['y_pred'])
+    def calc_confusion_matrix(y_true,y_pred):
+        return confusion_matrix(y_true,y_pred)
 
 class LobStatistics(BaseStatistics):
     def __init__(self, *args, **kwargs):
