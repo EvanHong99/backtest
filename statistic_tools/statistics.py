@@ -8,8 +8,10 @@
 from typing import Union
 
 import pandas as pd
-from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score,accuracy_score,classification_report,confusion_matrix
+from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_squared_error, r2_score, accuracy_score, \
+    classification_report, confusion_matrix
 import numpy as np
+
 
 # import config
 # from support import Target
@@ -21,22 +23,72 @@ class BaseStatistics(object):
         for key, value in kwargs.items():
             self.__setattr__(key, value)
 
+
 class ClassificationStatistics(BaseStatistics):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    @staticmethod
-    def calc_precision(y_true,y_pred, target):
-        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(
-            y_pred == target)
 
     @staticmethod
-    def calc_recall(y_true,y_pred, target):
-        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(
-            y_true == target)
+    def calc_precision(y_true, y_pred, target):
+        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(y_pred == target)
 
     @staticmethod
-    def calc_confusion_matrix(y_true,y_pred):
-        return confusion_matrix(y_true,y_pred)
+    def calc_recall(y_true, y_pred, target):
+        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(y_true == target)
+
+    @staticmethod
+    def calc_confusion_matrix(y_true, y_pred):
+        """
+        可用于多分类的confusion matrix
+        Parameters
+        ----------
+        y_true : 
+        y_pred : 
+
+        Returns
+        -------
+        
+        
+        Examples
+        --------
+            ```python
+                0,      1,      2
+            0,	183,	252,	13
+            1,	483,	2439,	507
+            2,	125,	288,	6
+            ```
+            对于上述矩阵，分别生成precision、recall、opportunity cost矩阵
+
+
+        """
+        # todo 设计基于任意多分类cm的统计方法
+        return confusion_matrix(y_true, y_pred)
+
+    def gen_stat(self, y_true, y_pred):
+        cm = self.calc_confusion_matrix(y_true, y_pred)
+
+        # precision and recall
+        precision_0 = self.calc_precision(y_true, y_pred, 0)
+        precision_2 = self.calc_precision(y_true, y_pred, 2)
+        recall_0 = self.calc_recall(y_true, y_pred, 0)
+        recall_2 = self.calc_recall(y_true, y_pred, 2)
+
+        # huge loss rate
+        huge_loss_rate_0 = cm[2, 0] / sum(cm[:, 0])
+        huge_loss_rate_2 = cm[0, 2] / sum(cm[:, 2])
+
+        # 机会成本对我是不利的
+        opportunity_cost = (cm[0, 1] + cm[2, 1]) / np.sum(cm[:, 1])
+
+        return {"cm": cm,
+                "precision_0": precision_0,
+                "precision_2": precision_2,
+                "recall_0": recall_0,
+                "recall_2": recall_2,
+                "huge_loss_rate_0": huge_loss_rate_0,
+                "huge_loss_rate_2": huge_loss_rate_2,
+                "opportunity_cost": opportunity_cost}
+
 
 class LobStatistics(BaseStatistics):
     def __init__(self, *args, **kwargs):
@@ -46,7 +98,7 @@ class LobStatistics(BaseStatistics):
         pass  # Generate report based on records from observer
 
     @staticmethod
-    def stat_pred_error(y_true, y_pred, name='stat',task='regression',target=None)->Union[pd.Series,pd.DataFrame]:
+    def stat_pred_error(y_true, y_pred, name='stat', task='regression', target=None) -> Union[pd.Series, pd.DataFrame]:
         """
 
         Parameters
@@ -62,11 +114,11 @@ class LobStatistics(BaseStatistics):
         -------
 
         """
-        if task=='regression':
-            if target==Target.vol.name:
-                y_true_mean=y_true.abs().mean()
-                return pd.Series({'baseline_mae': np.mean(np.abs(y_true.abs()-y_true_mean)),
-                                  'baseline_rmse': np.sqrt(np.square(y_true-y_true_mean).sum()),
+        if task == 'regression':
+            if target == Target.vol.name:
+                y_true_mean = y_true.abs().mean()
+                return pd.Series({'baseline_mae': np.mean(np.abs(y_true.abs() - y_true_mean)),
+                                  'baseline_rmse': np.sqrt(np.square(y_true - y_true_mean).sum()),
                                   'mae': mean_absolute_error(y_true, y_pred),
                                   'mse': mean_squared_error(y_true, y_pred),
                                   'rmse': mean_squared_error(y_true, y_pred, squared=False),
@@ -82,14 +134,14 @@ class LobStatistics(BaseStatistics):
                                   'r2_score': r2_score(y_true, y_pred),
                                   'explained_variance_score': explained_variance_score(y_true, y_pred)},
                                  name=name)
-        elif task=='binary':
-            res=classification_report(y_true,y_pred,output_dict=True)
+        elif task == 'binary':
+            res = classification_report(y_true, y_pred, output_dict=True)
             res['accuracy'] = {'f1-score': res['accuracy'], 'support': res['macro avg']['support']}
-            res=pd.DataFrame.from_dict(res).T
-            res.columns=pd.MultiIndex.from_tuples([(name,col) for col in res.columns])
+            res = pd.DataFrame.from_dict(res).T
+            res.columns = pd.MultiIndex.from_tuples([(name, col) for col in res.columns])
             return res
-        else: raise NotImplementedError
-
+        else:
+            raise NotImplementedError
 
     @staticmethod
     def stat_winrate(ret: pd.Series, signals, counterpart: bool, params=None):
@@ -107,16 +159,16 @@ class LobStatistics(BaseStatistics):
         win_times = (np.logical_and(signals != 0, ret.values > 0)).sum()
         fair_times = (np.logical_and(signals != 0, ret.values == 0)).sum()
         loss_times = (np.logical_and(signals != 0, ret.values < 0)).sum()
-        assert eff_opera==win_times+fair_times+loss_times
+        assert eff_opera == win_times + fair_times + loss_times
 
         desc['eff_opera'] = eff_opera
         desc['win_times'] = win_times
         desc['fair_times'] = fair_times
         desc['loss_times'] = loss_times
-        desc['eff_opera_ratio'] = eff_opera / max(len(signals),1)
-        desc['win_rate'] = win_times / max(eff_opera , 1)
-        desc['fair_rate'] = fair_times / max(eff_opera , 1)
-        desc['loss_rate'] = loss_times / max(eff_opera , 1)
+        desc['eff_opera_ratio'] = eff_opera / max(len(signals), 1)
+        desc['win_rate'] = win_times / max(eff_opera, 1)
+        desc['fair_rate'] = fair_times / max(eff_opera, 1)
+        desc['loss_rate'] = loss_times / max(eff_opera, 1)
 
         desc['use_counterpart'] = str(counterpart)
         if params:

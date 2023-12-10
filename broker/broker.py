@@ -251,7 +251,7 @@ class Broker(BaseBroker):
     def __repr__(self):
         return f'<Broker: {self._cash:.0f}{self.position.pl:+.1f} ({len(self.trades)} trades)>'
 
-    def load_data(self, clean_obh_dict: Union[dict, defaultdict,pd.DataFrame,PandasOHLCDataFeed] = None):
+    def load_data(self, clean_obh_dict: Union[dict, defaultdict, pd.DataFrame, PandasOHLCDataFeed] = None):
         """
 
         :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
@@ -286,7 +286,7 @@ class Broker(BaseBroker):
             else:
                 raise NotImplementedError("side not implemented")
 
-    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str,commission:float):
+    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str, commission: float):
         """
         批量处理信号，但仅针对单日单只个股信号
         Parameters
@@ -315,7 +315,7 @@ class Broker(BaseBroker):
         b1v = temp[str(LobColTemplate('b', 1, 'v'))]
         a1p = temp[str(LobColTemplate('a', 1, 'p'))]
         a1v = temp[str(LobColTemplate('a', 1, 'v'))]
-        current = temp[str(LobColTemplate().current)]
+        current = temp[str(LobColTemplate().spot)]
 
         # 计算收益，如果为正则代表收益为正
         long_open_time = _aligned_signals_long['timestamp_open'].values
@@ -339,7 +339,8 @@ class Broker(BaseBroker):
 
         revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0).sort_index()
         ret = pd.concat([long_ret, short_ret, hold_ret], axis=0).sort_index()
-        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold], axis=0).sort_index()
+        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold],
+                                     axis=0).sort_index()
 
         return revenue, ret, _aligned_signals
 
@@ -392,7 +393,7 @@ class Broker(BaseBroker):
         revenue_dict = defaultdict(dict)  # dict of dict
         ret_dict = defaultdict(dict)  # dict of dict
         aligned_signals_dict = defaultdict(dict)  # dict of dict
-        signals['date']=signals['datetime'].apply(lambda x: str(x.date()))
+        signals['date'] = signals['datetime'].apply(lambda x: str(x.date()))
         sig_dates = sorted(signals['date'].unique())
         sig_stk_names = sorted(signals['stk_name'].unique())
 
@@ -669,7 +670,7 @@ class StockBroker(BaseBroker):
     def __repr__(self):
         return f'<Broker: {self._cash:.0f}{self.position.pl:+.1f} ({len(self.trades)} trades)>'
 
-    def load_data(self, clean_obh_dict: Union[dict, defaultdict,PandasOHLCDataFeed] = None):
+    def load_data(self, clean_obh_dict: Union[dict, defaultdict, PandasOHLCDataFeed] = None):
         """
 
         :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
@@ -704,7 +705,7 @@ class StockBroker(BaseBroker):
             else:
                 raise NotImplementedError("side not implemented")
 
-    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str,commission=0):
+    def _meta_batch_execute(self, _signals: pd.DataFrame, date: str, stk_name: str, commission=0):
         """
         批量处理信号，但仅针对单日单只个股信号
         Parameters
@@ -733,7 +734,7 @@ class StockBroker(BaseBroker):
         # b1v = temp[str(LobColTemplate('b', 1, 'v'))]
         # a1p = temp[str(LobColTemplate('a', 1, 'p'))]
         # a1v = temp[str(LobColTemplate('a', 1, 'v'))]
-        current = temp[str(LobColTemplate().current)]
+        current = temp[str(LobColTemplate().spot)]
 
         # 计算收益，如果为正则代表收益为正
         long_open_time = _aligned_signals_long['datetime_open'].values
@@ -744,9 +745,12 @@ class StockBroker(BaseBroker):
         hold_close_time = _aligned_signals_hold['datetime_close'].values
 
         long_revenue = current.loc[long_close_time].values - current.loc[long_open_time].values
-        long_ret = np.log(current.loc[long_close_time].values / current.loc[long_open_time].values)
+        long_ret = np.log(np.array(current.loc[long_close_time].values / current.loc[long_open_time].values,dtype=np.float64))
         short_revenue = current.loc[short_open_time].values - current.loc[short_close_time].values
-        short_ret = np.log(current.loc[short_open_time].values / current.loc[short_close_time].values)
+        short_ret = np.log(np.array(current.loc[short_open_time].values / current.loc[short_close_time].values,dtype=np.float64))
+        if commission != 0:
+            long_ret -= commission
+            short_ret -= commission
 
         long_revenue = pd.Series(long_revenue, index=long_open_time)
         long_ret = pd.Series(long_ret, index=long_open_time)
@@ -755,13 +759,15 @@ class StockBroker(BaseBroker):
         hold_revenue = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
         hold_ret = pd.Series(np.zeros_like(hold_open_time, dtype=float), index=hold_open_time)
 
-        revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0)
-        ret = pd.concat([long_ret, short_ret, hold_ret], axis=0)
-        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold], axis=0)
+        revenue = pd.concat([long_revenue, short_revenue, hold_revenue], axis=0).sort_index()
+        ret = pd.concat([long_ret, short_ret, hold_ret], axis=0).sort_index()
+        _aligned_signals = pd.concat([_aligned_signals_long, _aligned_signals_short, _aligned_signals_hold],
+                                     axis=0).sort_index()
 
         return revenue, ret, _aligned_signals
 
-    def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None,commission=0):
+    def batch_execute(self, signals: pd.DataFrame, use_dates: List[str] = None, use_stk_names: List[str] = None,
+                      commission=0):
         """
         批量执行指令，无法画出净值曲线
 
@@ -814,7 +820,8 @@ class StockBroker(BaseBroker):
         sig_dates = sorted(signals['date'].unique())
         sig_stk_names = sorted(signals['stk_name'].unique())
 
-        logging.warning("TODO: 尚未加入commission")
+        if commission==0:
+            logging.warning("commission为0")
         for sig_date in sig_dates:
             for sig_stk_name in sig_stk_names:
                 # 筛选出某一天的signals
@@ -824,7 +831,8 @@ class StockBroker(BaseBroker):
 
                 _signals = signals.loc[np.logical_and(sig_date == signals['date'], signals['stk_name'] == sig_stk_name)]
 
-                revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name,commission=commission)
+                revenue, ret, _aligned_signals = self._meta_batch_execute(_signals, sig_date, sig_stk_name,
+                                                                          commission=commission)
 
                 revenue_dict[sig_date][sig_stk_name] = revenue
                 ret_dict[sig_date][sig_stk_name] = ret

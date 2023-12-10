@@ -460,6 +460,101 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         pass
 
 
+class GeneralTimePreprocessor(BasePreprocessor):
+    def __init__(self):
+        self.daily_timedeltas = {
+            'open_call_auction_start': timedelta(hours=9, minutes=15),
+            'open_call_auction_end': timedelta(hours=9, minutes=25),
+            'continues_auction_am_start': timedelta(hours=9, minutes=30),
+            'continues_auction_am_end': timedelta(hours=11, minutes=30),
+            'continues_auction_pm_start': timedelta(hours=13, minutes=00),
+            'continues_auction_pm_end': timedelta(hours=14, minutes=57),
+            'close_call_auction_start': timedelta(hours=14, minutes=57),
+            'close_call_auction_end': timedelta(hours=15, minutes=00), }
+
+    def del_untrade_time(self, df: Union[pd.Series, pd.DataFrame, List[Union[pd.Series, pd.DataFrame]]], cut_tail=True,
+                         strip: str = None,
+                         drop_last_row=False,
+                         split_df=False,
+                         pad_margin=False):
+        """
+
+        Parameters
+        ----------
+        drop_last_row :
+            去掉最后一行
+        df
+        cut_tail
+            去掉尾盘3min竞价
+        strip
+            去掉开收盘n min的数据
+        split_df
+            是否返回上下午分开的df
+        pad_margin
+            是否要ffill填充上下午开收盘的时刻数据（如填充09:30:00、11:30:00从而保证上午数据在asfreq或是resample之后能够整齐）
+
+        Returns
+        -------
+
+        """
+
+        def _meta(df, cut_tail, strip, split_df, pad_margin):
+            """
+            所有数据遵从ffill的思路
+            """
+            date_today = pd.to_datetime(df.index[0].date())
+
+            morning_start_time = date_today + self.daily_timedeltas['continues_auction_am_start']
+            morning_end_time = date_today + self.daily_timedeltas['continues_auction_am_end']
+            afternoon_start_time = date_today + self.daily_timedeltas['continues_auction_pm_start']
+            afternoon_end_time = date_today + self.daily_timedeltas[
+                'close_call_auction_end'] if not cut_tail else date_today + self.daily_timedeltas[
+                'continues_auction_pm_end']
+            if strip is not None:
+                strip_timedelta = str2timedelta(strip)
+                morning_start_time = date_today + self.daily_timedeltas['continues_auction_am_start'] + strip_timedelta
+                afternoon_end_time = min(date_today + self.daily_timedeltas['close_call_auction_end'] - strip_timedelta,
+                                         afternoon_end_time)
+
+            # 判断几个特殊时间点是否有数据，没有数据则用最近的数据来填充
+            a = df.loc[morning_start_time:date_today + self.daily_timedeltas['continues_auction_am_end']]  # 左闭右闭
+            b = df.loc[date_today + self.daily_timedeltas['continues_auction_pm_start']:afternoon_end_time]  # 左闭右闭
+            if pad_margin:
+                # ffill填充上下午开收盘的时刻数据（如填充09: 30:00、11: 30:00从而保证上午数据在asfreq或是resample之后能够整齐）
+                pad_morning_start = df.loc[df.index < morning_start_time].iloc[-1].to_frame().T
+                pad_morning_end = df.loc[df.index < morning_end_time].iloc[-1].to_frame().T
+                pad_afternoon_start = df.loc[df.index < afternoon_start_time].iloc[-1].to_frame().T
+                pad_afternoon_end = df.loc[df.index < afternoon_end_time].iloc[-1].to_frame().T
+                for i, (pad, dt) in enumerate(
+                        [(pad_morning_start, morning_start_time), (pad_morning_end, morning_end_time),
+                         (pad_afternoon_start, afternoon_start_time), (pad_afternoon_end, afternoon_end_time)]):
+                    if dt in df.index: continue
+                    pad.index = pad.index.map(lambda x: dt)
+                    if i < 2:
+                        a = pd.concat([a, pad], axis=0)
+                    elif i >= 2:
+                        b = pd.concat([b, pad], axis=0)
+
+            a = a.sort_index()
+            b = b.sort_index()
+            if split_df:
+                if drop_last_row:
+                    b = b.iloc[:-1]
+                temp = (a, b)
+            else:
+                temp = pd.concat([a, b], axis=0)
+                temp = temp.sort_index()
+                if drop_last_row:
+                    temp = temp.iloc[:-1]
+
+            return temp
+
+        if isinstance(df, list):
+            return [_meta(_df, cut_tail=cut_tail, strip=strip, split_df=split_df, pad_margin=pad_margin) for _df in df]
+        elif isinstance(df, pd.DataFrame) or isinstance(df, pd.Series):
+            return _meta(df, cut_tail=cut_tail, strip=strip, split_df=split_df, pad_margin=pad_margin)
+
+
 class LobTimePreprocessor(BasePreprocessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -523,6 +618,8 @@ class LobTimePreprocessor(BasePreprocessor):
             original_date = config.date
             current_yyyy, current_mm, current_dd = str(df.index[0].date()).split('-')
             update_date(current_yyyy, current_mm, current_dd)
+            # date_today=df.index[0].date()
+            # self.daily_timedeltas
 
             start_time = config.important_times['continues_auction_am_start']
             end_time = config.important_times['close_call_auction_end'] if not cut_tail else config.important_times[

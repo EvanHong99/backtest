@@ -109,7 +109,7 @@ class LobColTemplate(object):
         self.side = side
         self.level = level
         self.target = target
-        self.current = 'current'
+        self.spot = 'current'
         self.mid_price = 'mid_price'
 
     def __str__(self):

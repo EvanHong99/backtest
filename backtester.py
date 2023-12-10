@@ -313,7 +313,7 @@ class LobBackTester(BaseTester):
 
             # return 类型的target
             if target == Target.ret.name:
-                tar_col = LobColTemplate().current
+                tar_col = LobColTemplate().spot
             elif target == Target.mid_p_ret.name:
                 tar_col = LobColTemplate().mid_price
             else:
@@ -408,7 +408,7 @@ class LobBackTester(BaseTester):
                                                                                   str(LobColTemplate('a', 1, 'v')),
                                                                                   str(LobColTemplate('b', 1, 'p')),
                                                                                   str(LobColTemplate('b', 1, 'v')),
-                                                                                  str(LobColTemplate().current)])
+                                                                                  str(LobColTemplate().spot)])
                 temp = self.alldata[config.date][stk_name].asfreq(freq=min_freq, method='ffill')
                 shift_rows = int(pred_timedelta / min_timedelta)  # 预测 pred_timedelta 之后的涨跌幅
 
@@ -416,7 +416,7 @@ class LobBackTester(BaseTester):
                     tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
                     tar = np.log(tar / tar.shift(shift_rows))  # log ret
                 elif config.target == Target.ret.name:
-                    tar = temp[LobColTemplate().current]
+                    tar = temp[LobColTemplate().spot]
                     tar = np.log(tar / tar.shift(shift_rows))  # log ret
                 elif config.target == Target.vol.name:
                     # 波动率
@@ -580,7 +580,7 @@ class SingleAssetBackTester(BaseTester):
     """
 
     def __init__(self,
-                 dates: List[str | int],
+                 use_dates: List[str | int],
                  target: str,
                  freq: str,
                  strategy: Union[LobStrategy, SingleAssetStrategy] = None,
@@ -595,7 +595,8 @@ class SingleAssetBackTester(BaseTester):
         self.recorder = recorder
         self.statistics = statistics
 
-        self.dates = dates
+        self.use_dates = use_dates
+        self.dates=[]
         self.target = target
         self.freq = freq
         self.stk_names = list()
@@ -805,8 +806,8 @@ class SingleAssetBackTester(BaseTester):
                 self.dates.append(str(gg[0][0]))
                 self.stk_names.append(gg[0][1])
                 data_dict[str(gg[0][0])][gg[0][1]] = gg[1]
-            self.dates = sorted(self.dates)
-            self.stk_names = sorted(self.stk_names)
+            self.dates = sorted(set(self.dates))
+            self.stk_names = sorted(set(self.stk_names))
             return data_dict
 
         self.data_dict = split_datafeed(data)
@@ -834,13 +835,13 @@ class SingleAssetBackTester(BaseTester):
         # :param signals: dict, {date:all_signals for all stks}
         # :param clean_obh_dict: dict, {date:{stk_name:ret <pd.DataFrame>}}
         # self.broker.load_data(self.alldata)
-        # todo 需要增加多股票、多日期回测
-        for date in self.dates:
+        for date in self.use_dates:
             for stk_name in self.stk_names:
+                if date not in self.all_signals.index: continue
                 signals = self.all_signals.loc[date].sort_index()
 
-                # todo 逐个signal进行模拟
-                # for signal in signals: #(timestamp,stk_name,side,type,price_limit,volume)
+                # todo 逐个signal进行回测，从而实现更精确的回测记录
+                # for signal in signals: # (timestamp,stk_name,side,type,price_limit,volume)
                 #     self.broker.execute(signal)
 
                 # 批量交易

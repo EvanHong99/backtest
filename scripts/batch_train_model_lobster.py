@@ -93,7 +93,7 @@ if __name__ == '__main__':
                 tar = (temp[str(LobColTemplate('a', 1, 'p'))] + temp[str(LobColTemplate('b', 1, 'p'))]) / 2
                 tar = np.log(tar / tar.shift(shift_rows))  # log ret
             elif config.target == Target.ret.name:
-                tar = temp[LobColTemplate().current]
+                tar = temp[LobColTemplate().spot]
                 tar = np.log(tar / tar.shift(shift_rows))  # log ret
             elif config.target == Target.vol.name:
                 # 波动率
