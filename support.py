@@ -20,7 +20,7 @@ import json
 import logging
 from typing import Union, Optional
 from abc import ABC,abstractmethod
-from backtest.predefined.macro import OrderSideInt,OrderTypeInt,Target,ColTemplate,LobColTemplate,RQLobTemplateCaitong
+from backtest.predefined.macros import OrderSideInt,OrderTypeInt,Target,ColTemplate,LobColTemplate,RQLobTemplateCaitong
 
 def create_dirs(dir_list:list):
     for path in dir_list:

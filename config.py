@@ -4,10 +4,11 @@
 # @Author   : EvanHong
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
-# @Description:
+# @Description: 回测系统的config，包括费率等超参的设定
 from datetime import timedelta
 import os
-from backtest.support import Target,str2timedelta,create_dirs
+from backtest.support import str2timedelta, create_dirs
+from myconfig import root
 
 code_dict = {
     # '浦发银行': '600000.XSHG',
@@ -25,7 +26,7 @@ code_dict = {
     # '东方财富': '300059.XSHE',
 
     # 上证50
-    '贵州茅台':'600519.XSHG',
+    '贵州茅台': '600519.XSHG',
     '中国平安': '601318.XSHG',
     '招商银行': '600036.XSHG',
     '兴业银行': '601166.XSHG',
@@ -44,7 +45,7 @@ code_dict = {
     '山西汾酒': '600809.XSHG',
     '农业银行': '601288.XSHG',
     '三一重工': '600031.XSHG',
-    '保利发展': '600048.XSHG', # <-
+    '保利发展': '600048.XSHG',  # <-
     '中国联通': '600050.XSHG',
     '国电南瑞': '600406.XSHG',
     '通威股份': '600438.XSHG',
@@ -91,35 +92,29 @@ code_dict = {
     # "INTC": "INTC",
     # "MSFT": "MSFT",
 }
-complete_status={}
+complete_status = {}
 stk_name_dict = {v: k for k, v in code_dict.items()}
-exclude=[]
+exclude = []
 
-
-
-root = 'D:/Work/INTERNSHIP/海通场内/2023.06.08超高频上证50指数计算/'
-# root = '/content/drive/MyDrive/work/internship/haitong_sec/2023.06.08超高频上证50指数计算/'
 data_root = root + 'data/'
 detail_data_root = data_root + '个股交易细节/'
 res_root = root + 'res/'
 model_root = root + 'models/'
 scaler_root = root + 'scalers/'
-sub_dirs=[d+'10min_10min/' for d in [res_root,model_root,scaler_root]]
+sub_dirs = [d + '10min_10min/' for d in [res_root, model_root, scaler_root]]
 # create_dirs(sub_dirs)
 
-
-
+# 函数比formatted字符串更灵活
 FILE_FMT_order_book_history = "{}_{}_order_book_history.csv"  # 默认买卖各10档
 FILE_FMT_order_book_history_dict = "{}_{}_order_book_history.pkl"  # 默认买卖各10档
 FILE_FMT_price_history = "{}_{}_price_history.csv"
 FILE_FMT_clean_obh = "{}_{}_clean_obh.csv"  # 默认买卖各5档
 FILE_FMT_my_trade_details = "{}_{}_my_trade_details.csv"
 FILE_FMT_vol_tov = "{}_{}_vol_tov.csv"
-FILE_FMT_model = "{}_period{}_{}.pkl" # "{[stkname|'general']}_period{period}_{extract_model_name(model)}.pkl"
-FILE_FMT_scaler = "{}_scaler_{}_{}.pkl" # "{stkname}_scaler_{period}_{Any:default:'_'}.pkl"
+FILE_FMT_model = "{}_period{}_{}.pkl"  # "{[stkname|'general']}_period{period}_{extract_model_name(model)}.pkl"
+FILE_FMT_scaler = "{}_scaler_{}_{}.pkl"  # "{stkname}_scaler_{period}_{Any:default:'_'}.pkl"
 FILE_FMT_events = "{}_{}_events.csv"
 FILE_FMT_feature = "{}_{}_feature{}.csv"
-
 
 y = None
 m = None
@@ -130,7 +125,6 @@ start = None
 end = None
 important_times = None
 ranges = None
-
 
 # ==========prediction settings===========
 # ret
@@ -157,22 +151,24 @@ ranges = None
 # use_level = 5
 # strip_time='5min' # 去掉开收盘5min数据
 
-# vol_chg
-target = Target.vol_chg.name  # vol_chg
-min_freq='3s' # 最小精度，agg前data的频率，calc_features将数据asfreq至该freq
-agg_freq='10min' # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
-freq = agg_freq
-# freq_minutes=1
-pred_n_steps = 1  # 预测1个10min
-use_n_steps = 1  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
-drop_current = False  # 是否将当前股价作为因子输入给模型
-use_level = 5
-strip_time='5min' # 去掉开收盘5min数据
-
-min_timedelta=str2timedelta(min_freq)
-agg_timedelta=str2timedelta(agg_freq,use_n_steps)
-pred_timedelta=str2timedelta(agg_freq,pred_n_steps)
-strip_timedelta=str2timedelta(strip_time)
+# --------若要使用海通时期的代码，请取消注释以下片段----------
+# # vol_chg
+# target = Target.vol_chg.name  # vol_chg
+# min_freq='3s' # 最小精度，agg前data的频率，calc_features将数据asfreq至该freq
+# agg_freq='10min' # 计算feature agg的时候，用多少的数据去agg出一个数据点，也即agg后feature的freq
+# freq = agg_freq
+# # freq_minutes=1
+# pred_n_steps = 1  # 预测1个10min
+# use_n_steps = 1  # 利用use_n_steps个steps的数据去预测pred_n_steps之后的涨跌幅
+# drop_current = False  # 是否将当前股价作为因子输入给模型
+# use_level = 5
+# strip_time='5min' # 去掉开收盘5min数据
+#
+# min_timedelta=str2timedelta(min_freq)
+# agg_timedelta=str2timedelta(agg_freq,use_n_steps)
+# pred_timedelta=str2timedelta(agg_freq,pred_n_steps)
+# strip_timedelta=str2timedelta(strip_time)
+# ------------------------------------------------------
 # ====================================
 
 # init

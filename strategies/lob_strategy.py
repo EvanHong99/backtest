@@ -8,7 +8,7 @@
 
 from backtest.preprocessors.preprocess import LobTimePreprocessor
 from backtest.strategies.base_strategy import BaseStrategy
-from backtest.predefined.macro import OrderTypeInt,TypeAction
+from backtest.predefined.macros import OrderTypeInt,TypeAction
 from typing import Union
 import pandas as pd
 import numpy as np

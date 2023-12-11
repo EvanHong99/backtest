@@ -8,7 +8,7 @@
 # @Description:
 
 from backtest.strategies.base_strategy import BaseStrategy
-from backtest.predefined.macro import OrderTypeInt,TypeAction
+from backtest.predefined.macros import OrderTypeInt,TypeAction
 from typing import Union
 
 import pandas as pd
@@ -159,13 +159,13 @@ class SingleAssetStrategy(BaseStrategy):
             y_pred_pos=y_pred.loc[(y_pred>0).values]
             y_pred_neg=y_pred.loc[(y_pred<0).values]
             pos_threshold=y_pred_pos.quantile(percentile)
-            neg_threshold=y_pred_neg.quantile(percentile)
+            neg_threshold=y_pred_neg.quantile(1-percentile)
 
             # fixme: 计算正开仓信号，通过设置self.threshold来调整参数，不够优雅
             self.threshold=pos_threshold
             pos_signals=meta(y_pred_pos)
             # 计算负开仓信号
-            self.threshold=neg_threshold
+            self.threshold=-neg_threshold # neg_threshold是负数，需要加一个负号，因为calc_signal默认是根据正的threshold来计算1、0、-1
             neg_signals=meta(y_pred_neg)
             signals=pd.concat([pos_signals,neg_signals],axis=0).sort_index()
 

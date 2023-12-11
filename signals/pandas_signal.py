@@ -13,7 +13,7 @@ from typing import Union
 
 from backtest.signals.base_signal import BaseSingleAssetSignal, TypeUnderlyingAsset
 from backtest.signals.signal_namespace import PandasSignalNamespace
-from backtest.predefined.macro import OrderTypeInt, OrderSideInt
+from backtest.predefined.macros import OrderTypeInt, OrderSideInt
 
 
 class PandasSignal(BaseSingleAssetSignal):

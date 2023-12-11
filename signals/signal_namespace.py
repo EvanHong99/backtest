@@ -8,7 +8,7 @@
 # @Description: 其实就是一个mapper，用来绑定磁盘上数据的列名和框架内部固定的调用方式
 from collections import defaultdict
 from typing import Union
-from backtest.predefined.macro import OrderTypeInt,OrderSideInt
+from backtest.predefined.macros import OrderTypeInt,OrderSideInt
 
 
 class BaseSignalNamespace(object):

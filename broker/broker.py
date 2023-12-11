@@ -11,13 +11,13 @@ from typing import Dict, List, Union
 from collections import defaultdict
 
 from backtest.support import *
-from backtest.config import *
 from backtest.broker.orders import Order
 from backtest.broker.trades import Trade
 from backtest.recorders.transactions import Transaction
 from backtest.recorders.position import Position
 from backtest.recorders.portfolio import *
 from backtest.datafeeds.datafeed import PandasOHLCDataFeed
+import myconfig
 
 
 # class OrderTypeIntError(TypeError):
@@ -310,7 +310,7 @@ class Broker(BaseBroker):
         _aligned_signals_short = _aligned_signals.loc[_aligned_signals['side_open'] == -1]
         _aligned_signals_hold = _aligned_signals.loc[_aligned_signals['side_open'] == 0]
 
-        temp = self.clean_obh_dict[date][stk_name].asfreq(freq=min_freq, method='ffill')
+        temp = self.clean_obh_dict[date][stk_name].asfreq(freq=myconfig.min_freq, method='ffill')
         b1p = temp[str(LobColTemplate('b', 1, 'p'))]
         b1v = temp[str(LobColTemplate('b', 1, 'v'))]
         a1p = temp[str(LobColTemplate('a', 1, 'p'))]
@@ -729,7 +729,7 @@ class StockBroker(BaseBroker):
         _aligned_signals_short = _aligned_signals.loc[_aligned_signals['side_open'] == -1]
         _aligned_signals_hold = _aligned_signals.loc[_aligned_signals['side_open'] == 0]
 
-        temp = self.clean_obh_dict[date][stk_name].asfreq(freq=min_freq, method='ffill')
+        temp = self.clean_obh_dict[date][stk_name].asfreq(freq=myconfig.min_freq, method='ffill')
         # b1p = temp[str(LobColTemplate('b', 1, 'p'))]
         # b1v = temp[str(LobColTemplate('b', 1, 'v'))]
         # a1p = temp[str(LobColTemplate('a', 1, 'p'))]
