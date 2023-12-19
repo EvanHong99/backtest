@@ -5,6 +5,7 @@
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
 # @Description:
+import logging
 from typing import Union
 
 import pandas as pd
@@ -14,7 +15,7 @@ import numpy as np
 
 
 # import config
-# from support import Target
+from backtest.predefined.macros import Target
 
 
 class BaseStatistics(object):
@@ -183,8 +184,8 @@ class LobStatistics(BaseStatistics):
         net_ret = pd.Series(net_ret, index=direction.index, name=name)
         return net_ret
 
-    @classmethod
-    def stat_pred_performance(cls):
+    # @classmethod
+    def stat_pred_performance(self):
         """
         统计回测胜率、单次盈亏等
         Returns
@@ -224,3 +225,102 @@ class LobStatistics(BaseStatistics):
         print(all_stats)
         print(all_stats_winrate)
         return all_stats, all_stats_winrate
+
+
+class NetValueStatistics(BaseStatistics):
+    def __init__(self, days_per_year=250, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.days_per_year = days_per_year
+
+    def statistics(self, df: Union[pd.Series, pd.DataFrame], freq='daily', risk_free_rate=0.03):
+        """
+
+        Parameters
+        ----------
+        df :
+            净值序列需要从1开始
+        freq :
+        risk_free_rate :
+
+        Returns
+        -------
+
+        """
+        df.index = pd.to_datetime(df.index)
+        if isinstance(df, pd.Series):
+            df = df.to_frame()
+        print(f"净值序列长度：{len(df)}")
+
+        res = pd.DataFrame()
+        for col in df.columns:
+            ser = df[col]
+
+            # 总收益
+            return_total = self.calc_total_return(ser)
+
+            # 年化波动率
+            volatility_annual = self.calc_annual_vol(ser, freq=freq)
+
+            # 年化收益率
+            return_annual = self.calc_annual_return(ser)
+
+            # 夏普比率
+            sharpeRatio = self.calc_sharpe(return_annual=return_annual,
+                                           volatility_annual=volatility_annual,
+                                           risk_free_rate=risk_free_rate,
+                                           name=ser.name)
+
+            # 最大回撤
+            max_drawdown,max_drawdown_date=self.calc_max_drawdown(ser)
+
+            # 汇总成表
+            single_res=pd.Series({'return_total':return_total, 'volatility_annual':volatility_annual, 'return_annual':return_annual, 'sharpeRatio':sharpeRatio, 'max_drawdown':max_drawdown,'max_drawdown_date':max_drawdown_date},name=ser.name).T
+            res=pd.concat([res,single_res],axis=1)
+
+        return res
+
+    def preprocess(self, ser: pd.Series):
+        if ser.iloc[0, 0] != 1:
+            logging.warning(f'net value series doesn\'t start from 1, {ser.head(3)}', ValueError)
+
+    def calc_total_return(self, ser: pd.Series):
+        return_total = ser.iloc[-1] - 1
+        return return_total
+
+    def calc_annual_return(self, ser: pd.Series):
+        delta = ser.index[-1] - ser.index[0]
+        seconds_per_year = self.days_per_year * 4 * 3600
+        seconds_delta = delta.days * 4 * 3600 + delta.seconds
+        years = seconds_delta / seconds_per_year
+
+        return_annual = (ser.iloc[-1]) ** (1 / years) - 1
+        return return_annual
+
+    def calc_annual_vol(self, ser: pd.Series, freq):
+        days_per_year = self.days_per_year
+        # todo 自动频率识别
+        # freq= ser.index[1] - ser.index[0]
+        if freq == 'daily':
+            volatility_annual = (ser / ser.shift(1) - 1).std() * np.sqrt(days_per_year)
+        elif freq == 'monthly':
+            volatility_annual = (ser / ser.shift(1) - 1).std() * np.sqrt(12)
+        elif freq == 'minutes':
+            volatility_annual = (ser / ser.shift(1) - 1).std() * np.sqrt(days_per_year * 4 * 60)
+        elif freq == 'seconds':
+            volatility_annual = (ser / ser.shift(1) - 1).std() * np.sqrt(days_per_year * 4 * 60 * 60)
+        elif freq == '3s':
+            volatility_annual = (ser / ser.shift(1) - 1).std() * np.sqrt(days_per_year * 4 * 60 * 20)
+        else:
+            raise NotImplementedError
+        return volatility_annual
+
+    def calc_sharpe(self, return_annual,volatility_annual,risk_free_rate,name):
+        sharpe=(return_annual - risk_free_rate) / volatility_annual
+        return sharpe
+
+    def calc_max_drawdown(self, ser):
+        temp = (np.maximum.accumulate(ser) - ser) / np.maximum.accumulate(ser)
+        maxDrawdown = temp.max()
+        maxDrawdown_date= pd.to_datetime(temp.idxmax())
+
+        return maxDrawdown,maxDrawdown_date

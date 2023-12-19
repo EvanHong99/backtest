@@ -18,7 +18,7 @@ from datetime import timedelta
 import pickle
 import json
 import logging
-from typing import Union, Optional
+from typing import Union, Optional,List
 from abc import ABC,abstractmethod
 from backtest.predefined.macros import OrderSideInt,OrderTypeInt,Target,ColTemplate,LobColTemplate,RQLobTemplateCaitong
 
@@ -282,6 +282,15 @@ def continuous2discrete(ret: pd.Series, drift=0, pos_threshold: Union[float, lis
         if neg_threshold is None:
             neg_threshold = [-x for x in pos_threshold]
         raise NotImplementedError()
+
+
+def normalize_code(symbol_list:Union[list,int,str,List[int,],pd.Series]):
+    if isinstance(symbol_list,(list,pd.Series)):
+        res=[]
+        for symbol in symbol_list:
+            res.append("{:06d}".format(symbol))
+        return res
+    else: raise NotImplementedError()
 
 if __name__ == '__main__':
     import config
