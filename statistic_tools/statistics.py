@@ -13,7 +13,6 @@ from sklearn.metrics import explained_variance_score, mean_absolute_error, mean_
     classification_report, confusion_matrix
 import numpy as np
 
-
 # import config
 from backtest.predefined.macros import Target
 
@@ -28,17 +27,63 @@ class BaseStatistics(object):
 class ClassificationStatistics(BaseStatistics):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.num_class = -1
 
     @staticmethod
-    def calc_precision(y_true, y_pred, target):
-        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(y_pred == target)
+    def calc_precision(cm, limit=1):
+        res = {}
+        precision_template = "precision_{}"
+        cum_precision_template = "cum_precision_{}"  # 累计precision，即当前label及更高阈值label所占所有预测之和
+        num_class = cm.shape[0]
+        assert num_class >= 2 * limit  # 至少多于2*limit个类别
+        target_labels_pos = list(range(num_class))[-limit:]
+        target_labels_neg = list(range(num_class))[:limit]
+        for i in target_labels_neg:
+            precision = sum(cm[:i + 1, i]) / sum(cm[:, i])
+            res[precision_template.format(i)] = precision
+        for i in target_labels_pos:
+            precision = sum(cm[i:, i]) / sum(cm[:, i])
+            res[precision_template.format(i)] = precision
+
+        # 累计精度
+        for i in target_labels_neg:
+            cum_precision = sum(cm[:i + 1, :i+1].flatten()) / sum(cm[:, :i+1].flatten())
+            res[cum_precision_template.format(i)] = cum_precision
+        for i in target_labels_pos:
+            cum_precision = sum(cm[i:, i:].flatten()) / sum(cm[:, i:].flatten())
+            res[cum_precision_template.format(i)] = cum_precision
+
+        return res
 
     @staticmethod
-    def calc_recall(y_true, y_pred, target):
-        return np.sum(np.logical_and(y_pred == target, y_true == target)) / np.sum(y_true == target)
+    def calc_recall(cm, limit=1):
+        res = {}
+        recall_template = "recall_{}"
+        cum_recall_template = "cum_recall_{}"
+        num_class = cm.shape[0]
+        assert num_class >= 2 * limit  # 至少多于2*limit个类别
+        target_labels_pos = list(range(num_class))[-limit:]
+        target_labels_neg = list(range(num_class))[:limit]
+        for i in target_labels_neg:
+            recall = sum(cm[i, :i + 1]) / sum(cm[i, :])
+            res[recall_template.format(i)] = recall
+        for i in target_labels_pos:
+            recall = sum(cm[i, i:]) / sum(cm[i, :])
+            res[recall_template.format(i)] = recall
 
-    @staticmethod
-    def calc_confusion_matrix(y_true, y_pred):
+        # 累计recall
+        for i in target_labels_neg:
+            cum_recall = sum(cm[:i + 1, :i+1].flatten()) / sum(cm[:i+1, :].flatten())
+            res[cum_recall_template.format(i)] = cum_recall
+        for i in target_labels_pos:
+            cum_recall = sum(cm[i:, i:].flatten()) / sum(cm[i:, :].flatten())
+            res[cum_recall_template.format(i)] = cum_recall
+
+        return res
+
+
+
+    def calc_confusion_matrix(self, y_true, y_pred):
         """
         可用于多分类的confusion matrix
         Parameters
@@ -62,33 +107,90 @@ class ClassificationStatistics(BaseStatistics):
 
 
         """
-        # todo 设计基于任意多分类cm的统计方法
-        return confusion_matrix(y_true, y_pred)
+        cm = confusion_matrix(y_true, y_pred)
+        self.num_class = cm.shape[0]
+        return cm
 
-    def gen_stat(self, y_true, y_pred):
+    @staticmethod
+    def calc_huge_loss_rate(cm, limit=1) -> dict:
+        """
+
+        Parameters
+        ----------
+        cm :
+        limit : int,
+            最多limit个档位的最极端预测会被统计。例如limit=1，当前是9分类任务，则只有最极端的两个预测label（0和8）会被计算
+
+        Returns
+        -------
+        res : dict,
+            大损失概率
+
+        """
+        res = {}
+        key_template = "huge_loss_rate_{}"
+        num_class = cm.shape[0]
+        assert num_class >= 2 * limit + 1  # 至少多于2*limit个类别
+        target_labels_pos = list(range(num_class))[-limit:]
+        target_labels_neg = list(range(num_class))[:limit]
+        for i in target_labels_neg:
+            huge_loss_rate = sum(cm[target_labels_pos, i]) / sum(cm[:, i])
+            res[key_template.format(i)] = huge_loss_rate
+        for i in target_labels_pos:
+            huge_loss_rate = sum(cm[target_labels_neg, i]) / sum(cm[:, i])
+            res[key_template.format(i)] = huge_loss_rate
+        return res
+
+    @staticmethod
+    def calc_opportunity_cost(cm, limit=1):
+        """机会成本
+        .. math::
+            opportunity\_cost=\\frac{预测不操作但真实情况应该操作的数量}{所有预测不操作的数量}
+
+        Parameters
+        ----------
+        cm :
+        limit : int,
+            最多limit个档位的最极端预测之外的中庸信号会被统计。例如limit=1，当前是9分类任务，则只有最极端的两个预测label（0和8）之外的列会被计算作为no_action，而0和8行则作为应该采取操作的数量，从而计算机会成本
+
+        Returns
+        -------
+        res : dict,
+            机会成本
+
+        """
+        res = {}
+        key_template = "opportunity_cost"
+        num_class = cm.shape[0]
+        assert num_class >= 2 * limit + 1  # 至少多于2*limit个类别
+
+        labels_action = list(range(num_class))[-limit:] + list(range(num_class))[:limit]
+        labels_no_action = list(range(num_class))[limit:-limit]
+        if len(labels_no_action) == 0: raise ValueError()
+
+        opportunity_cost = sum(cm[labels_action, :][:, labels_no_action].flatten()) / np.sum(
+            cm[:, labels_no_action].flatten())
+        res[key_template] = opportunity_cost
+        return res
+
+    def gen_stat(self, y_true, y_pred, limit=1):
+
         cm = self.calc_confusion_matrix(y_true, y_pred)
+        res = {"cm": cm}
 
-        # precision and recall
-        precision_0 = self.calc_precision(y_true, y_pred, 0)
-        precision_2 = self.calc_precision(y_true, y_pred, 2)
-        recall_0 = self.calc_recall(y_true, y_pred, 0)
-        recall_2 = self.calc_recall(y_true, y_pred, 2)
+        precision = self.calc_precision(cm, limit=limit)
+        recall = self.calc_recall(cm, limit=limit)
+        huge_loss_rate = self.calc_huge_loss_rate(cm, limit=limit)
+        opportunity_cost = self.calc_opportunity_cost(cm, limit=limit)
 
-        # huge loss rate
-        huge_loss_rate_0 = cm[2, 0] / sum(cm[:, 0])
-        huge_loss_rate_2 = cm[0, 2] / sum(cm[:, 2])
+        res.update(precision)
+        res.update(recall)
+        res.update(huge_loss_rate)
+        res.update(opportunity_cost)
 
-        # 机会成本对我是不利的
-        opportunity_cost = (cm[0, 1] + cm[2, 1]) / np.sum(cm[:, 1])
+        logging.warning("需要对连续值的statistics进行优化，加入y_true*y信号强度")
 
-        return {"cm": cm,
-                "precision_0": precision_0,
-                "precision_2": precision_2,
-                "recall_0": recall_0,
-                "recall_2": recall_2,
-                "huge_loss_rate_0": huge_loss_rate_0,
-                "huge_loss_rate_2": huge_loss_rate_2,
-                "opportunity_cost": opportunity_cost}
+        return res
 
 
 class LobStatistics(BaseStatistics):
@@ -271,11 +373,14 @@ class NetValueStatistics(BaseStatistics):
                                            name=ser.name)
 
             # 最大回撤
-            max_drawdown,max_drawdown_date=self.calc_max_drawdown(ser)
+            max_drawdown, max_drawdown_date = self.calc_max_drawdown(ser)
 
             # 汇总成表
-            single_res=pd.Series({'return_total':return_total, 'volatility_annual':volatility_annual, 'return_annual':return_annual, 'sharpeRatio':sharpeRatio, 'max_drawdown':max_drawdown,'max_drawdown_date':max_drawdown_date},name=ser.name).T
-            res=pd.concat([res,single_res],axis=1)
+            single_res = pd.Series(
+                {'return_total': return_total, 'volatility_annual': volatility_annual, 'return_annual': return_annual,
+                 'sharpeRatio': sharpeRatio, 'max_drawdown': max_drawdown, 'max_drawdown_date': max_drawdown_date},
+                name=ser.name).T
+            res = pd.concat([res, single_res], axis=1)
 
         return res
 
@@ -314,13 +419,13 @@ class NetValueStatistics(BaseStatistics):
             raise NotImplementedError
         return volatility_annual
 
-    def calc_sharpe(self, return_annual,volatility_annual,risk_free_rate,name):
-        sharpe=(return_annual - risk_free_rate) / volatility_annual
+    def calc_sharpe(self, return_annual, volatility_annual, risk_free_rate, name):
+        sharpe = (return_annual - risk_free_rate) / volatility_annual
         return sharpe
 
     def calc_max_drawdown(self, ser):
         temp = (np.maximum.accumulate(ser) - ser) / np.maximum.accumulate(ser)
         maxDrawdown = temp.max()
-        maxDrawdown_date= pd.to_datetime(temp.idxmax())
+        maxDrawdown_date = pd.to_datetime(temp.idxmax())
 
-        return maxDrawdown,maxDrawdown_date
+        return maxDrawdown, maxDrawdown_date
