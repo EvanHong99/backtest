@@ -4,7 +4,7 @@
 # @Author   : EvanHong
 # @Email    : 939778128@qq.com
 # @Project  : 2023.06.08超高频上证50指数计算
-# @Description:
+# @Description:  ad
 from __future__ import annotations
 
 import logging
@@ -36,7 +36,7 @@ from backtest.recorders.position import Position
 from backtest.recorders.portfolio import *
 from backtest.signals.pandas_signal import PandasSignal
 from backtest.strategies.single_asset_strategy import SingleAssetStrategy
-
+import numpy as np
 
 class BaseTester(object):
     def __init__(self, *args, **kwargs):

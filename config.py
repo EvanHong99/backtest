@@ -8,7 +8,6 @@
 from datetime import timedelta
 import os
 from backtest.support import str2timedelta, create_dirs
-from myconfig import root
 
 code_dict = {
     # '浦发银行': '600000.XSHG',
@@ -96,6 +95,7 @@ complete_status = {}
 stk_name_dict = {v: k for k, v in code_dict.items()}
 exclude = []
 
+root='/Users/hongyifan/Desktop/work/internship/citic_futures/20231226bid-ask-spread/'
 data_root = root + 'data/'
 detail_data_root = data_root + '个股交易细节/'
 res_root = root + 'res/'
@@ -163,11 +163,13 @@ ranges = None
 # drop_current = False  # 是否将当前股价作为因子输入给模型
 # use_level = 5
 # strip_time='5min' # 去掉开收盘5min数据
-#
+strip_time=None
+
 # min_timedelta=str2timedelta(min_freq)
 # agg_timedelta=str2timedelta(agg_freq,use_n_steps)
 # pred_timedelta=str2timedelta(agg_freq,pred_n_steps)
 # strip_timedelta=str2timedelta(strip_time)
+
 # ------------------------------------------------------
 # ====================================
 

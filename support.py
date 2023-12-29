@@ -102,7 +102,7 @@ def get_trade_details(data_root, date, symbol):
 
 
 def update_date(yyyy: Union[str, int] = None, mm: Union[str, int] = None, dd: Union[str, int] = None):
-    import config
+    from backtest import config
     if yyyy is None:
         config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges = None, None, None, None, None, None, None, None, None
         return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges

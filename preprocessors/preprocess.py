@@ -16,8 +16,9 @@ from numba import jit
 from sklearn.preprocessing import StandardScaler
 
 from backtest.config import *
-import backtest.config as config
+from backtest import config
 from backtest.support import *
+from backtest.support import update_date
 import pickle
 from abc import abstractmethod
 from typing import Union, List
@@ -744,7 +745,7 @@ class LobFeatureEngineering(object):
         pass
 
     def calc_wap(self, df, level, cross=True):
-        """Function to calculate first WAP
+        """Function to calculate level WAP
 
         References
         ----------
@@ -757,6 +758,67 @@ class LobFeatureEngineering(object):
             wap = (df[self.ap[level]] * df[self.av[level]] + df[self.bp[level]] * df[self.bv[level]]) / (
                     df[self.bv[level]] + df[self.av[level]])
         name = f'wap{level}'
+        if cross: name += '_c'
+        wap = wap.rename(name)
+        wap = wap.replace([np.inf, -np.inf], np.nan)
+        return wap
+
+    def calc_cum_wap(self, df, level, cross=True):
+        """Function to calculate corresponding weighted average price
+
+        Notes
+        -----
+        这个函数可能导致价格疯狂跳动，因为高档位的报撤单是非常频繁的
+
+        References
+        ----------
+        [1] optiver金牌算法. https://mp.weixin.qq.com/s/Pe4i3I9-ErYFE9uL5B5pvQ
+        """
+        a_v = 0
+        b_v = 0
+        a_pv = 0
+        b_pv = 0
+        for i in range(1, level + 1):
+            b_v += df[self.bv[i]]
+            a_v += df[self.av[i]]
+            if cross:
+                a_pv+=df[self.ap[level]] * df[self.bv[level]]
+                b_pv+=df[self.bp[level]] * df[self.av[level]]
+            else:
+                a_pv+=df[self.ap[level]] * df[self.av[level]]
+                b_pv+=df[self.bp[level]] * df[self.bv[level]]
+        wap = (a_pv+b_pv) / (a_v+b_v)
+        name = f'cum_wap{level}'
+        if cross: name += '_c'
+        wap = wap.rename(name)
+        wap = wap.replace([np.inf, -np.inf], np.nan)
+        return wap
+
+    def calc_cum_vol_wap(self, df, cum_level, cross=True):
+        """用对手side累积volume来加权1档价格
+
+        Parameters
+        ----------
+        df :
+        cum_level : int,
+            累积level个档位的volume
+        cross :
+
+        Returns
+        -------
+
+        """
+        a_v = 0
+        b_v = 0
+        for i in range(1, cum_level + 1):
+            b_v += df[self.bv[i]]
+            a_v += df[self.av[i]]
+
+        if cross:
+            wap = (df[self.bp[1]] * a_v + df[self.ap[1]] * b_v) / (a_v + b_v)
+        else:
+            wap = (df[self.bp[1]] * b_v + df[self.ap[1]] * a_v) / (a_v + b_v)
+        name = f'cum_vol_wap{cum_level}'
         if cross: name += '_c'
         wap = wap.rename(name)
         wap = wap.replace([np.inf, -np.inf], np.nan)
