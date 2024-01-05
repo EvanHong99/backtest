@@ -1,0 +1,9 @@
+pandas
+numpy
+scipy
+matplotlib
+statsmodels
+hdf5plugin
+h5py
+overrides
+py_vollib_vectorized
