@@ -656,17 +656,41 @@ class LobTimePreprocessor(BasePreprocessor):
             return _meta(df, cut_tail=cut_tail, strip=strip, split_df=split_df)
 
     @staticmethod
-    def add_head_tail(df, head_timestamp, tail_timestamp):
-        # df=df.dropna(how='any',axis=0)
+    def add_head_tail(df, head_timestamp=None, tail_timestamp=None,date_=None,bfill_head=False):
+        """
+
+        Parameters
+        ----------
+        df :
+        head_timestamp :
+        tail_timestamp :
+        date_ :
+        bfill_head : bool,
+            是否要将第一行用第二行的数据fill
+
+        Returns
+        -------
+
+        """
+        if head_timestamp is None and tail_timestamp is None and date_ is None:
+            raise ValueError(f"at least one of the params `date_` and (`head_timestamp`,`tail_timestamp`) should be not None")
+        elif head_timestamp is None and tail_timestamp is None:
+            # date_ is not none
+            head_timestamp=pd.to_datetime(f"{date_} 09:30:00")
+            tail_timestamp=pd.to_datetime(f"{date_} 14:57:00")
+        else: raise ValueError("you should provide (`head_timestamp`,`tail_timestamp`) simultaneously")
         try:
-            # print(df.index.dtype, df)
             assert df.index[0] >= head_timestamp and df.index[-1] <= tail_timestamp
         except Exception as e:
             print('add_head_tail', df.index[0], head_timestamp, df.index[-1], tail_timestamp)
             raise e
+
         res = df.copy(deep=True)
         res.loc[pd.to_datetime(tail_timestamp)] = df.iloc[-1].copy(deep=True)
-        res.loc[pd.to_datetime(head_timestamp)] = df.iloc[0].copy(deep=True)
+        if bfill_head:
+            res.loc[pd.to_datetime(head_timestamp)] = df.iloc[0].copy(deep=True)
+        else:
+            res.loc[pd.to_datetime(head_timestamp)]=np.nan
         res = res.sort_index()
         return res
 
@@ -758,13 +782,13 @@ class LobFeatureEngineering(object):
             wap = (df[self.ap[level]] * df[self.av[level]] + df[self.bp[level]] * df[self.bv[level]]) / (
                     df[self.bv[level]] + df[self.av[level]])
         name = f'wap{level}'
-        if cross: name += '_c'
+        if cross: name += '_cross'
         wap = wap.rename(name)
         wap = wap.replace([np.inf, -np.inf], np.nan)
         return wap
 
     def calc_cum_wap(self, df, level, cross=True):
-        """Function to calculate corresponding weighted average price
+        """Function to calculate corresponding weighted average price. 各档位volume*price的加权，而非一档价格按照volume加权
 
         Notes
         -----

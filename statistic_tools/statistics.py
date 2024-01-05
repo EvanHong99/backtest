@@ -429,3 +429,9 @@ class NetValueStatistics(BaseStatistics):
         maxDrawdown_date = pd.to_datetime(temp.idxmax())
 
         return maxDrawdown, maxDrawdown_date
+
+def calc_r_squared(y_true,y_pred):
+    y_mean=np.mean(y_true)
+    SS_total=((y_true-y_mean)**2).sum()
+    SS_res=((y_true-y_pred)**2).sum()
+    return 1-SS_res/SS_total

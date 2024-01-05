@@ -579,7 +579,7 @@ def calc_time2maturity(current: Union[pd.DatetimeIndex, pd.Series], expiry: Unio
         raise NotImplementedError()
 
 
-def calc_effective_price(fe, df, method='wap', level=1):
+def calc_effective_price(fe, df, method='wap', level=1)->Union[pd.DataFrame,pd.Series]:
     """计算期权有效价格
 
     Parameters
@@ -601,6 +601,7 @@ def calc_effective_price(fe, df, method='wap', level=1):
     elif method == 'cum_wap':
         res = fe.calc_cum_wap(df, level=level, cross=True)
     res.index=pd.to_datetime(res.index)
+
     return res
 
 
@@ -622,3 +623,36 @@ def calc_iv_greeks(price, S, K, t, r, flag, q, calc_greeks=True, index=None):
         res.index=index
     res.index = pd.to_datetime(res.index)
     return res
+
+
+def get_class_name(obj):
+    """获取某个对象的名称，常用于命名文件
+
+    Parameters
+    ----------
+    obj :
+
+    Returns
+    -------
+
+    """
+    name = str(obj).split('.')[-1].split(' ')[0]
+    return name
+
+
+def get_expire_map(date_, expire_date_list):
+    """获取某个日期的四个到期日，即当月、下月、当季、下季，前两者为近月，后两者为远月
+
+    Parameters
+    ----------
+    date_ :
+    expire_date_list : list,
+        到期日的list，需要有序
+
+    Returns
+    -------
+
+    """
+    expire_date_list = deepcopy(np.array(expire_date_list))
+    expire_date_map=dict(zip(expire_date_list[date_ <= expire_date_list][:4],[1,2,3,6]))
+    return expire_date_map
