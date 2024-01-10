@@ -629,8 +629,8 @@ class LobTimePreprocessor(BasePreprocessor):
                 strip_timedelta = str2timedelta(strip)
                 start_time = config.important_times['continues_auction_am_start'] + strip_timedelta
                 end_time = min(config.important_times['close_call_auction_end'] - strip_timedelta, end_time)
-            a = df.loc[start_time:config.important_times['continues_auction_am_end']]
-            b = df.loc[config.important_times['continues_auction_pm_start']:end_time]
+            a = df.loc[str(start_time):str(config.important_times['continues_auction_am_end'])]
+            b = df.loc[str(config.important_times['continues_auction_pm_start']):str(end_time)]
             if split_df:
                 a = a.sort_index()
                 b = b.sort_index()

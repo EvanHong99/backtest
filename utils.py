@@ -14,10 +14,14 @@ from copy import deepcopy
 from typing_extensions import (
     Literal,
 )  # typing_extensions is used for using Literal from python 3.7
+from backtest.preprocessors.preprocess import LobFeatureEngineering
 
 '''
 %load_ext autoreload
 %autoreload 2
+
+jupyter notebook:
+%%prun -T ./profiling.txt -D .profiling_stats.txt
 '''
 
 
@@ -330,10 +334,22 @@ def get_basic_info(codes, fields='ths_stock_short_name_stock;ths_corp_nature_sto
     return get_THS_BD(codes, fields, f';{date};100,{date}').data
 
 
-def plot_legend_outside(df: Union[pd.Series, pd.DataFrame, np.ndarray], save_path=None,
-                        baseline: Union[pd.Series, pd.DataFrame] = None, linewidth=0.8,
-                        xticks: Union[list, np.array] = None, shrink: Union[bool, int] = 1000,
-                        plot_uniform_timestamp=True):
+def plot_legend_outside(df: Union[pd.Series,pd.DataFrame,np.ndarray],
+                        save_path=None,
+                        baseline: Union[pd.Series,pd.DataFrame] = None,
+                        linewidth=0.8,
+                        xticks: Union[list,np.array] = None,
+                        shrink: Union[bool,int] = 1000,
+                        plot_uniform_timestamp=True,
+                        title=None,
+                        marker='',
+                        linestyle='-',
+                        markersize=3,
+                        horizontal_line_values:Union[List[int],List[float],list]=None,
+                        horizontal_line_marker='',
+                        horizontal_line_linestyle='--',
+                        horizontal_line_color='r',
+                        ):
     """将legend放到图片外部
 
     Parameters
@@ -350,6 +366,12 @@ def plot_legend_outside(df: Union[pd.Series, pd.DataFrame, np.ndarray], save_pat
         if int, 将df缩减到shrink行。 if True, 缩放到最多10000行
     plot_uniform_timestamp : bool,
         将时间戳视为均匀的点，而不是按照时间戳的间隔来画图。设置为true可以跳过午盘。该参数能大幅提高画图效率
+    linestyle : str,
+        '-': solid line, '--': dashed line, '': no line
+    marker : str,
+        'o': circles, '.': dots, '': no marker
+    horizontal_line_values : Union[List[int],List[float],list],
+        if not none，则会在图中画指示性作用的dashed横线
 
     Returns
     -------
@@ -366,8 +388,12 @@ def plot_legend_outside(df: Union[pd.Series, pd.DataFrame, np.ndarray], save_pat
         step = len(df) // steps
         df = df.iloc[::step]
 
-    for col in df.columns:
-        plt.plot(df.index, df[col], label=col, linewidth=linewidth)
+    # for col in df.columns:
+    #     plt.plot(df.index, df[col], label=col, linewidth=linewidth)
+
+    plt.plot(df.index, df, label=df.columns, linewidth=linewidth, marker=marker, linestyle=linestyle,
+             markersize=markersize)
+
     if baseline is not None:
         baseline_name = 'baseline'
         if isinstance(baseline, pd.DataFrame):
@@ -393,7 +419,15 @@ def plot_legend_outside(df: Union[pd.Series, pd.DataFrame, np.ndarray], save_pat
         else:
             plt.xticks(range(length), xticks)
 
+    if title is not None:
+        plt.title(title)
     plt.legend(bbox_to_anchor=(1.0, 1.0))
+
+    if horizontal_line_values is not None:
+        for y in horizontal_line_values:
+            plt.axhline(y=y,linestyle=horizontal_line_linestyle,marker=horizontal_line_marker,color=horizontal_line_color)
+
+
     if save_path is not None:
         plt.savefig(save_path, dpi=320, bbox_inches='tight')
     plt.show()
@@ -494,7 +528,7 @@ def calc_rv(df, window=10):
 
 
 def calc_date2maturity(current: Union[str, datetime, np.datetime64], expiry: Union[str, datetime, np.datetime64],
-                       trading_dates: Union[np.ndarray, List[str]] = None,including_right=False):
+                       trading_dates: Union[np.ndarray, List[str]] = None, including_right=False):
     """用于计算current距离expiry在中国交易日历中的天数
 
     Parameters
@@ -528,9 +562,9 @@ def calc_date2maturity(current: Union[str, datetime, np.datetime64], expiry: Uni
 
     idx_curr = np.argwhere(trading_dates == current)[0][0]
     idx_exp = np.argwhere(trading_dates == expiry)[0][0]
-    res=idx_exp - idx_curr
+    res = idx_exp - idx_curr
     if not including_right:
-        res-=1
+        res -= 1
     return res
 
 
@@ -579,7 +613,7 @@ def calc_time2maturity(current: Union[pd.DatetimeIndex, pd.Series], expiry: Unio
         raise NotImplementedError()
 
 
-def calc_effective_price(fe, df, method='wap', level=1)->Union[pd.DataFrame,pd.Series]:
+def calc_effective_price(fe, df, method='wap', level=1) -> Union[pd.DataFrame, pd.Series]:
     """计算期权有效价格
 
     Parameters
@@ -600,7 +634,7 @@ def calc_effective_price(fe, df, method='wap', level=1)->Union[pd.DataFrame,pd.S
         res = fe.calc_cum_vol_wap(df, cum_level=level, cross=True)
     elif method == 'cum_wap':
         res = fe.calc_cum_wap(df, level=level, cross=True)
-    res.index=pd.to_datetime(res.index)
+    res.index = pd.to_datetime(res.index)
 
     return res
 
@@ -610,8 +644,9 @@ from py_vollib_vectorized.greeks import delta, gamma, vega, theta, rho
 
 
 def calc_iv_greeks(price, S, K, t, r, flag, q, calc_greeks=True, index=None):
-    iv = vectorized_implied_volatility(price=price, S=S, K=K, t=t, r=r, flag=flag, q=q,on_error='ignore').replace(0,np.nan)
-    res=iv
+    iv = vectorized_implied_volatility(price=price, S=S, K=K, t=t, r=r, flag=flag, q=q, on_error='ignore').replace(0,
+                                                                                                                   np.nan)
+    res = iv
     if calc_greeks:
         option_delta = delta(flag=flag, S=S, K=K, t=t, r=r, sigma=iv, q=q)
         option_gamma = gamma(flag=flag, S=S, K=K, t=t, r=r, sigma=iv, q=q)
@@ -620,7 +655,7 @@ def calc_iv_greeks(price, S, K, t, r, flag, q, calc_greeks=True, index=None):
         option_rho = rho(flag=flag, S=S, K=K, t=t, r=r, sigma=iv, q=q)
         res = pd.concat([iv, option_delta, option_gamma, option_vega, option_theta, option_rho], axis=1)
     if index is not None:
-        res.index=index
+        res.index = index
     res.index = pd.to_datetime(res.index)
     return res
 
@@ -653,6 +688,25 @@ def get_expire_map(date_, expire_date_list):
     -------
 
     """
+
+    def get_month(date_str: str):
+        return date_str.split('-')[1]
+
+    quater_months = ['03', '06', '09', '12']
     expire_date_list = deepcopy(np.array(expire_date_list))
-    expire_date_map=dict(zip(expire_date_list[date_ <= expire_date_list][:4],[1,2,3,6]))
+    after_today = expire_date_list[date_ <= expire_date_list]
+    res = []
+    counter = 1
+    for i, expire_date in enumerate(after_today):
+        if counter <= 2:
+            res.append(expire_date)
+            counter += 1
+        elif counter >= 3 and counter <= 4:
+            if get_month(expire_date) in quater_months:
+                res.append(expire_date)
+                counter += 1
+        else:
+            break
+    expire_date_map = dict(zip(res, [1, 2, 3, 6]))
+    assert len(expire_date_map) == 4
     return expire_date_map

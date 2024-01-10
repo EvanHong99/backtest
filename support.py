@@ -138,26 +138,26 @@ def update_date(yyyy: Union[str, int] = None, mm: Union[str, int] = None, dd: Un
     #     start+=config.strip_timedelta
     #     end=min(end,config.important_times['close_call_auction_end']-config.strip_timedelta)
     # config.ranges = [(start,
-    #                   pd.to_datetime(f'{config.date1} 10:30:00.000') - config.agg_timedelta),
-    #                  (pd.to_datetime(f'{config.date1} 10:30:00.000'),
-    #                   pd.to_datetime(f'{config.date1} 11:30:00.000') - config.agg_timedelta),
-    #                  (pd.to_datetime(f'{config.date1} 13:00:00.000'),
-    #                   pd.to_datetime(f'{config.date1} 14:00:00.000') - config.agg_timedelta),
-    #                  (pd.to_datetime(f'{config.date1} 14:00:00.000'),
+    #                   pd.to_datetime(f'{config.date1} 10:30:00.000000') - config.agg_timedelta),
+    #                  (pd.to_datetime(f'{config.date1} 10:30:00.000000'),
+    #                   pd.to_datetime(f'{config.date1} 11:30:00.000000') - config.agg_timedelta),
+    #                  (pd.to_datetime(f'{config.date1} 13:00:00.000000'),
+    #                   pd.to_datetime(f'{config.date1} 14:00:00.000000') - config.agg_timedelta),
+    #                  (pd.to_datetime(f'{config.date1} 14:00:00.000000'),
     #                   end)]
 
-    start = pd.to_datetime(f'{config.date1} 09:30:00.000')
-    end = pd.to_datetime(f'{config.date1} 14:57:00.000')
+    start = pd.to_datetime(f'{config.date1} 09:30:00.000000')
+    end = pd.to_datetime(f'{config.date1} 14:57:00.000000')
     if config.strip_time is not None:
         start += config.strip_timedelta
-        end = min(end, pd.to_datetime(f'{config.date1} 15:00:00.000') - config.strip_timedelta)
+        end = min(end, pd.to_datetime(f'{config.date1} 15:00:00.000000') - config.strip_timedelta)
     config.ranges = [(start,
-                      pd.to_datetime(f'{config.date1} 10:30:00.000')),
-                     (pd.to_datetime(f'{config.date1} 10:30:00.000'),
-                      pd.to_datetime(f'{config.date1} 11:30:00.000')),
-                     (pd.to_datetime(f'{config.date1} 13:00:00.000'),
-                      pd.to_datetime(f'{config.date1} 14:00:00.000')),
-                     (pd.to_datetime(f'{config.date1} 14:00:00.000'),
+                      pd.to_datetime(f'{config.date1} 10:30:00.000000')),
+                     (pd.to_datetime(f'{config.date1} 10:30:00.000000'),
+                      pd.to_datetime(f'{config.date1} 11:30:00.000000')),
+                     (pd.to_datetime(f'{config.date1} 13:00:00.000000'),
+                      pd.to_datetime(f'{config.date1} 14:00:00.000000')),
+                     (pd.to_datetime(f'{config.date1} 14:00:00.000000'),
                       end)]
 
     return config.y, config.m, config.d, config.date, config.date1, config.start, config.end, config.important_times, config.ranges
