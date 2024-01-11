@@ -225,17 +225,7 @@ def load_concat_data(name, mid_path):
     return data_dict
 
 
-def str2timedelta(time_str: str, multiplier: int = None) -> datetime.timedelta:
-    if multiplier is None: multiplier = 1
-    if time_str.endswith('min'):
-        td = timedelta(minutes=int(time_str[:-3]) * multiplier)
-    elif time_str.endswith('ms'):
-        td = timedelta(milliseconds=int(time_str[:-2]) * multiplier)
-    elif time_str.endswith('s'):
-        td = timedelta(seconds=int(time_str[:-1]) * multiplier)
-    else:
-        raise NotImplementedError("in config")
-    return td
+
 
 
 def continuous2discrete(ret: pd.Series, drift=0, pos_threshold: Union[float, list] = 0.001,

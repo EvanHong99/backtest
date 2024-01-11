@@ -460,9 +460,31 @@ class LobCleanObhPreprocessor(BasePreprocessor):
         """
         pass
 
+def str2timedelta( time_str: str, multiplier: int = None) -> Optional[datetime.timedelta]:
+    raise PendingDeprecationWarning("该函数将被废弃，请改用`backtest.preprocessors.preprocess.GeneralTimePreprocessor`")
+    if time_str is None:
+        return timedelta(seconds=0)
+
+    if multiplier is None: multiplier = 1
+    time_str_list = time_str.split(' ')
+    delta = timedelta(seconds=0)
+    for time_str in time_str_list:
+        if time_str.endswith('min'):
+            td = timedelta(minutes=int(time_str[:-3]) * multiplier)
+        elif time_str.endswith('m'):
+            td = timedelta(minutes=int(time_str[:-1]) * multiplier)
+        elif time_str.endswith('ms'):
+            td = timedelta(milliseconds=int(time_str[:-2]) * multiplier)
+        elif time_str.endswith('s'):
+            td = timedelta(seconds=int(time_str[:-1]) * multiplier)
+        else:
+            raise NotImplementedError("in config")
+        delta += td
+    return delta
 
 class GeneralTimePreprocessor(BasePreprocessor):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.daily_timedeltas = {
             'open_call_auction_start': timedelta(hours=9, minutes=15),
             'open_call_auction_end': timedelta(hours=9, minutes=25),
@@ -472,6 +494,80 @@ class GeneralTimePreprocessor(BasePreprocessor):
             'continues_auction_pm_end': timedelta(hours=14, minutes=57),
             'close_call_auction_start': timedelta(hours=14, minutes=57),
             'close_call_auction_end': timedelta(hours=15, minutes=00), }
+
+    def str2timedelta(self, time_str: str, multiplier: int = None) -> Optional[datetime.timedelta]:
+        if time_str is None:
+            return timedelta(seconds=0)
+
+        if multiplier is None: multiplier = 1
+        time_str_list = time_str.split(' ')
+        delta = timedelta(seconds=0)
+        for time_str in time_str_list:
+            if time_str.endswith('min'):
+                td = timedelta(minutes=int(time_str[:-3]) * multiplier)
+            elif time_str.endswith('m'):
+                td = timedelta(minutes=int(time_str[:-1]) * multiplier)
+            elif time_str.endswith('ms'):
+                td = timedelta(milliseconds=int(time_str[:-2]) * multiplier)
+            elif time_str.endswith('s'):
+                td = timedelta(seconds=int(time_str[:-1]) * multiplier)
+            else:
+                raise NotImplementedError("in config")
+            delta += td
+        return delta
+
+    def del_untrade_time_(self, df: Union[pd.Series, pd.DataFrame, List[Union[pd.Series, pd.DataFrame]]],
+                          cut_tail=True,
+                          strip: list = None,
+                          use_default=False
+                          ):
+        """
+
+        Parameters
+        ----------
+        df :
+        cut_tail :
+        strip :
+        use_default : bool,
+            if true，那就使用默认的strip=['5m', '1m', '1m', '5m']
+
+        Returns
+        -------
+
+        """
+        if strip is None:
+            strip = [None, None, None, None]
+        if use_default:
+            strip=['5m', '1m', '1m', '5m']
+        if cut_tail and strip[3] is None:
+            strip[3] = '3m'
+        for i in range(len(strip)):
+            if strip[i] is None:
+                strip[i] = '0s'
+
+        placeholder = '2000-01-01'  # 仅用于构建datetime从而能实现时间运算，
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
+        index = df.index.time.astype(str)
+        idx = np.full(shape=(len(index)), fill_value=True, dtype=bool)
+        idx1 = np.full(shape=(len(index)), fill_value=True, dtype=bool)
+        # 上下午必须分开，因为两个时间段不能同时用logical_and
+        # 上午
+        if strip[0] is not None:
+            idx = np.logical_and(idx, index >= str(
+                (pd.to_datetime(f"{placeholder} 09:30:00") + self.str2timedelta(strip[0])).time()))
+        if strip[1] is not None:
+            idx = np.logical_and(idx, index <= str(
+                (pd.to_datetime(f"{placeholder} 11:30:00") - self.str2timedelta(strip[1])).time()))
+        # 下午
+        if strip[2] is not None:
+            idx1 = np.logical_and(idx1, index >= str(
+                (pd.to_datetime(f"{placeholder} 13:00:00") + self.str2timedelta(strip[2])).time()))
+        if strip[3] is not None:
+            idx1 = np.logical_and(idx1, index <= str(
+                (pd.to_datetime(f"{placeholder} 15:00:00") - self.str2timedelta(strip[3])).time()))
+        idx = np.logical_or(idx, idx1)
+        return df.loc[idx]
 
     def del_untrade_time(self, df: Union[pd.Series, pd.DataFrame, List[Union[pd.Series, pd.DataFrame]]], cut_tail=True,
                          strip: str = None,
@@ -560,7 +656,8 @@ class LobTimePreprocessor(BasePreprocessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # self.freq = '200ms'
-        pass
+        raise PendingDeprecationWarning(
+            "`LobTimePreprocessor`将被淘汰，请使用`backtest.preprocessors.preprocess.GeneralTimePreprocessor`")
 
     @staticmethod
     def del_middle_hours(df: Union[pd.Series, pd.DataFrame], morning_end: datetime.time = None,
@@ -656,7 +753,7 @@ class LobTimePreprocessor(BasePreprocessor):
             return _meta(df, cut_tail=cut_tail, strip=strip, split_df=split_df)
 
     @staticmethod
-    def add_head_tail(df, head_timestamp=None, tail_timestamp=None,date_=None,bfill_head=False):
+    def add_head_tail(df, head_timestamp=None, tail_timestamp=None, date_=None, bfill_head=False):
         """
 
         Parameters
@@ -673,12 +770,14 @@ class LobTimePreprocessor(BasePreprocessor):
 
         """
         if head_timestamp is None and tail_timestamp is None and date_ is None:
-            raise ValueError(f"at least one of the params `date_` and (`head_timestamp`,`tail_timestamp`) should be not None")
+            raise ValueError(
+                f"at least one of the params `date_` and (`head_timestamp`,`tail_timestamp`) should be not None")
         elif head_timestamp is None and tail_timestamp is None:
             # date_ is not none
-            head_timestamp=pd.to_datetime(f"{date_} 09:30:00")
-            tail_timestamp=pd.to_datetime(f"{date_} 14:57:00")
-        else: raise ValueError("you should provide (`head_timestamp`,`tail_timestamp`) simultaneously")
+            head_timestamp = pd.to_datetime(f"{date_} 09:30:00")
+            tail_timestamp = pd.to_datetime(f"{date_} 14:57:00")
+        else:
+            raise ValueError("you should provide (`head_timestamp`,`tail_timestamp`) simultaneously")
         try:
             assert df.index[0] >= head_timestamp and df.index[-1] <= tail_timestamp
         except Exception as e:
@@ -690,7 +789,7 @@ class LobTimePreprocessor(BasePreprocessor):
         if bfill_head:
             res.loc[pd.to_datetime(head_timestamp)] = df.iloc[0].copy(deep=True)
         else:
-            res.loc[pd.to_datetime(head_timestamp)]=np.nan
+            res.loc[pd.to_datetime(head_timestamp)] = np.nan
         res = res.sort_index()
         return res
 
@@ -806,12 +905,12 @@ class LobFeatureEngineering(object):
             b_v += df[self.bv[i]]
             a_v += df[self.av[i]]
             if cross:
-                a_pv+=df[self.ap[level]] * df[self.bv[level]]
-                b_pv+=df[self.bp[level]] * df[self.av[level]]
+                a_pv += df[self.ap[level]] * df[self.bv[level]]
+                b_pv += df[self.bp[level]] * df[self.av[level]]
             else:
-                a_pv+=df[self.ap[level]] * df[self.av[level]]
-                b_pv+=df[self.bp[level]] * df[self.bv[level]]
-        wap = (a_pv+b_pv) / (a_v+b_v)
+                a_pv += df[self.ap[level]] * df[self.av[level]]
+                b_pv += df[self.bp[level]] * df[self.bv[level]]
+        wap = (a_pv + b_pv) / (a_v + b_v)
         name = f'cum_wap{level}'
         if cross: name += '_c'
         wap = wap.rename(name)
