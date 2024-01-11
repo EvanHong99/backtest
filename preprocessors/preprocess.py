@@ -594,7 +594,8 @@ class GeneralTimePreprocessor(BasePreprocessor):
         -------
 
         """
-
+        raise PendingDeprecationWarning(
+            "`del_untrade_time`将被淘汰，请使用`del_untrade_time_`")
         def _meta(df, cut_tail, strip, split_df, pad_margin):
             """
             所有数据遵从ffill的思路
